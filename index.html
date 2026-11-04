@@ -1980,7 +1980,8 @@ function docTitle(d){ return d.name.replace(/\.[a-z0-9]{2,4}$/i,"").replace(/\s*
 function sectionsOf(text){
   const out = []; let heading = "";
   text.split(/\n\s*\n/).map(s=>s.trim()).filter(Boolean).forEach(p=>{
-    const lines = p.split("\n"), first = lines[0].trim();
+    const lines = p.split("\n").map((l, n) => n === 0 ? l.replace(/^\s*#{1,6}\s+/, "").replace(/^\*\*(.+?)\*\*:?\s*$/, "$1") : l), first = lines[0].trim();
+    p = lines.join("\n");
     const headLike = (first.length < 100 || /^[^a-z]+$/.test(first)) && !/[.!?:;]$/.test(first) && !/^[-•§▪]/.test(first);
     if(headLike && lines.length === 1){ heading = first; return; }
     let body = p;
@@ -2009,6 +2010,7 @@ function dedupe(items){
     it.set = termSet(it.text);
     let dup = -1;
     for(let k=0; k<kept.length && dup<0; k++){
+      if(it.di && it.di === kept[k].di && it.s && kept[k].s && it.s !== kept[k].s) continue;
       const a = it.set, b = kept[k].set; let inter = 0; a.forEach(w=>{ if(b.has(w)) inter++; });
       const jac = inter / ((a.size + b.size - inter) || 1);
       const contain = Math.max(inter/(a.size||1), inter/(b.size||1));
@@ -2085,6 +2087,7 @@ const ABBR = {
 // synonym groups: the first entry is the canonical form used for matching
 const SYN_GROUPS = [
   ["early payoff penalty","early pay off penalty","early payment penalty","prepayment penalty","prepayment fee","early repayment fee","early repayment penalty","early settlement fee","early settlement penalty","pre-payment penalty"],
+  ["prohibited","prohibit","prohibition","not allowed","not permitted","cannot","can not","can't","forbidden","shall not be provided"],
   ["exempt","exemption","waive","waiver","waived","waiving"],
   ["credit screen department","credit screening department","credit screen"],
   ["disbursement","disburse","drawdown","draw down","loan release","release the loan","disbursed"],
@@ -2381,7 +2384,12 @@ function runAgentCore(query, opts = {}, original = false){
       });
     });
     // 6. Deduplicate: each rule once, keeping the most complete version
-    const kept = dedupe(items).sort((a,b)=>a.pos-b.pos);
+    let kept = dedupe(items).sort((a,b)=>a.pos-b.pos);
+    const secTop = new Map(); kept.forEach(it=>secTop.set(it.s, Math.max(secTop.get(it.s) || 0, it.score || 0)));
+    const topSec = Math.max(0, ...secTop.values());
+    kept = kept.filter(it=>{ const v = secTop.get(it.s); return topSec >= HIGH ? v >= HIGH : v >= topSec - 0.05; });
+    // on a tie, the section whose heading names more of the question (e.g. the brand asked about) answers
+    if(topSec < HIGH){ const hk = new Map(); kept.forEach(it=>hk.set(it.s, it.s.headKey || 0)); const mx = Math.max(0, ...hk.values()); if(mx > 0) kept = kept.filter(it=>hk.get(it.s) === mx); }
     conflicts = detectConflicts(kept);
     kept.forEach(it=>{ if(!usedByDoc.has(it.di)) usedByDoc.set(it.di, new Set()); usedByDoc.get(it.di).add(it.s); });
     if(kept.length){
