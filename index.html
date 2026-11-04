@@ -2087,6 +2087,7 @@ const ABBR = {
 // synonym groups: the first entry is the canonical form used for matching
 const SYN_GROUPS = [
   ["early payoff penalty","early pay off penalty","early payment penalty","prepayment penalty","prepayment fee","early repayment fee","early repayment penalty","early settlement fee","early settlement penalty","pre-payment penalty"],
+  ["cut off","cutoff","cut-off"],
   ["prohibited","prohibit","prohibition","not allowed","not permitted","cannot","can not","can't","forbidden","shall not be provided"],
   ["exempt","exemption","waive","waiver","waived","waiving"],
   ["credit screen department","credit screening department","credit screen"],
@@ -2176,26 +2177,32 @@ function buildVocab(){
 }
 function editDist(a, b, max){
   if(Math.abs(a.length - b.length) > max) return max + 1;
-  let prev = Array.from({length: b.length + 1}, (_, i) => i);
+  let prev = Array.from({length: b.length + 1}, (_, i) => i), prev2 = null;
   for(let i = 1; i <= a.length; i++){
     const cur = [i]; let best = i;
     for(let j = 1; j <= b.length; j++){
       cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
-      if(i > 1 && j > 1 && a[i-1] === b[j-2] && a[i-2] === b[j-1]) cur[j] = Math.min(cur[j], prev[j-2 >= 0 ? j-2 : 0] + 1);   // swapped letters
+      if(i > 1 && j > 1 && prev2 && a[i-1] === b[j-2] && a[i-2] === b[j-1]) cur[j] = Math.min(cur[j], prev2[j-2] + 1);   // swapped letters
       best = Math.min(best, cur[j]);
     }
     if(best > max) return max + 1;
-    prev = cur;
+    prev2 = prev; prev = cur;
   }
   return prev[b.length];
 }
 function spellFix(q){
   const V = buildVocab(), fixes = [];
-  const out = String(q || "").replace(/[A-Za-z]{4,}/g, w => {
+  const out = String(q || "").replace(/[A-Za-z]{3,}/g, w => {
     const l = w.toLowerCase();
     if(V.freq.has(l) || V.stems.has(stem(l)) || STOP.has(l) || ABBR[l]) return w;
+    if(l.length === 3){ let hit = null, hf = 0; V.freq.forEach((f, cand) => { if(cand.length === 4 && cand[0] === l[0] && f > hf && editDist(l, cand, 1) === 1){ hit = cand; hf = f; } }); if(hit){ fixes.push(`${w}→${hit}`); return hit; } return w; }
     const max = l.length >= 7 ? 2 : 1; let best = null, bd = max + 1, bf = 0;
-    V.freq.forEach((f, cand) => { if(Math.abs(cand.length - l.length) > max) return; const d = editDist(l, cand, max); if(d < bd || (d === bd && f > bf)){ best = cand; bd = d; bf = f; } });
+    // ties: a word with the same letters (typing swap) wins, then the same first letter, then the same length, then the more common word
+    const sorted = x => x.split("").sort().join(""), ls = sorted(l); let bkey = null;
+    V.freq.forEach((f, cand) => { if(Math.abs(cand.length - l.length) > max) return; const d = editDist(l, cand, max); if(d > max) return;
+      const key = [d, sorted(cand) === ls ? 0 : 1, cand[0] === l[0] ? 0 : 1, Math.abs(cand.length - l.length), -f];
+      const better = () => { for(let k = 0; k < key.length; k++){ if(key[k] !== bkey[k]) return key[k] < bkey[k]; } return false; };
+      if(!bkey || better()){ best = cand; bd = d; bkey = key; } });
     if(best && bd <= max){ fixes.push(`${w}→${best}`); return best; }
     return w;
   });
@@ -2249,8 +2256,11 @@ function runAgentCore(query, opts = {}, original = false){
   const defQuery = /\b(what does|what do|meaning|what is meant|define|definition|difference between)\b/i.test(expandKhmer(query||""));
   const mergeAsked = /\b(all documents|both documents|every document|across documents|across all|compare|combine|merge)\b/i.test(query||"");
   if(mergeAsked){ const mw = new Set(tokens("compare across all both every documents document combine merge")); for(let k=terms.length-1;k>=0;k--) if(mw.has(terms[k])) terms.splice(k,1); }
+  // personal files (incl. Credit analysis uploads) are searched only when the question asks about them
+  const wantMine = opts.includeMine || /\b(my (own )?(files?|documents?|docs?|uploads?)|uploaded|attached|credit analysis|financial (statements?|ratios?|analysis)|ratio analysis|balance sheet|income statement|profit and loss|cash ?flow statement)\b/i.test(query || "");
+  const mineFiles = wantMine || (opts.docId && data.files.some(f=>f.id === opts.docId)) ? data.files : [];
   const docs = kb().map(d=>({d, source:"kb", allowed:canAccess(u,d)}))
-    .concat(data.files.map(f=>({d:{...f, level:0, depts:["Mine"]}, source:"mine", allowed:true})));
+    .concat(mineFiles.map(f=>({d:{...f, level:0, depts:["Mine"]}, source:"mine", allowed:true})));
   const searchable = docs.filter(x=>x.d.text);
 
   // 1. Documents -> sections -> lines. Heading/title words count as context only if the body doesn't use them
