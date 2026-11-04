@@ -247,6 +247,8 @@ label.field>span,.flabel{display:block;font-size:13px;font-weight:700;margin-bot
 .par-hist .row .input{min-width:0}
 .cmp-good{color:var(--ok);font-weight:700}.cmp-bad{color:var(--danger);font-weight:700}
 @media print{.par-x,#parCmpX,.par-hist,#parCmpBtn,#parBuild{display:none!important}}
+.risk-head{font-weight:700;margin:12px 0 2px}.rh-high{color:#B42318}.rh-medium{color:#B26B00}.rh-no{color:#0F7B45}
+:root[data-theme="dark"] .rh-high{color:#FF8A80}:root[data-theme="dark"] .rh-medium{color:#FFC266}:root[data-theme="dark"] .rh-no{color:#6BD49A}
 .mode-badge{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;margin-bottom:6px;background:var(--soft);color:var(--sub)}
 .mode-badge.expert{background:#233E85;color:#fff}
 .tbl-wrap{overflow-x:auto;margin:6px 0 12px}
@@ -431,8 +433,10 @@ body{overflow-x:hidden}
 .m .body{min-width:0;overflow-wrap:anywhere}
 .table-wrap,.tbl-wrap,.doc-text,.results{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .tbl-wrap{max-width:100%}
-.ans-tbl th,.ans-tbl td{white-space:nowrap}
-.ans-tbl td:last-child,.ans-tbl th:last-child{white-space:normal;min-width:160px}
+.ans-tbl{width:100%}
+.ans-tbl th,.ans-tbl td{white-space:normal;overflow-wrap:anywhere}
+.ans-tbl .risk-chip{white-space:nowrap}
+.ans-tbl td:last-child:has(.risk-chip),.ans-tbl th:last-child{width:1%;white-space:nowrap}
 /* touch screens: 44px targets, controls always visible, no hover-only actions */
 @media (pointer:coarse){
   .icon-btn{min-width:44px;min-height:44px}
@@ -757,6 +761,21 @@ body{overflow-x:hidden}
 (function(){
 "use strict";
 /* ================= Helpers ================= */
+// When browser storage is full (large statements fill it quickly), free space automatically so that account
+// changes (new users, password resets, sign-in) are never lost: drop cached summaries, shorten the audit log and
+// shorten the stored text of uploaded files. The full text of files uploaded this session stays in memory.
+function freeStorage(){
+  try{
+    localStorage.removeItem("aab_par_cache");
+    const lg = JSON.parse(localStorage.getItem("aab3_audit") || "[]"); if(lg.length > 200) localStorage.setItem("aab3_audit", JSON.stringify(lg.slice(0, 200)));
+  }catch(e){}
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i); if(!k || !k.startsWith("aab3_data_")) continue;
+    try{ const d = JSON.parse(localStorage.getItem(k)); if(!d || !d.files) continue;
+      d.files = d.files.map((f, n) => f.text ? {...f, text: n < 3 ? f.text.slice(0, 60000) : null, indexed: n < 3} : f);
+      localStorage.setItem(k, JSON.stringify(d)); }catch(e){}
+  }
+}
 /* ================= Online storage (Supabase) ================= */
 // Keys starting with "aab3_" (staff accounts, admins, knowledge base, audit log, chats) are shared through
 // Supabase, so every tester sees the same accounts on any device. Other keys (theme, layout) stay in this browser.
@@ -806,7 +825,12 @@ const store = {
   },
   set(k, v){
     if(isCloud(k)){ const c = clone(v); cloudCache.set(k, c); cloudWrite(k, c); return true; }
-    try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ toast("Browser storage is full. Delete some files and try again."); return false; }
+    try{ localStorage.setItem(k, JSON.stringify(v)); return true; }
+    catch(e){
+      freeStorage();
+      try{ localStorage.setItem(k, JSON.stringify(v)); return true; }
+      catch(e2){ toast("Browser storage is full. Delete some files in My files and try again."); return false; }
+    }
   },
   del(k){
     if(isCloud(k)){ cloudCache.delete(k); cloudWrite(k, null, true); return; }
@@ -939,7 +963,9 @@ const DICTIONARY_DOC = "BANKING AND FRAUD DICTIONARY\nBanking and Fraud Dictiona
   return `${t.en}\n- ${name} (Khmer: ${t.km.join(" / ")}) is ${t.cat.toLowerCase()} terminology.\n- ${name} definition: ${t.def}\n- ${name} means: ${t.means}\n- ${name} does not mean: ${t.not}\n- ${name} business context: ${t.ctx}\n- ${name} related terms: ${t.rel}.`;
 }).join("\n\n");
 
+const CREDIT_OPS_DOC = "CREDIT OPERATION GUIDELINE\nCredit Operation Guideline, PPCBank (Phnom Penh Commercial Bank Plc.), Sales Planning Department. Version No. 3. Effective Date: 28/09/2021. Resolved by the Executive Committee (meeting on 27/09/2021). Proposed by Nhak Kimsroy, Senior Vice President, and Hong Junghwan, Senior Manager, on 28/09/2021.\n\nDocument Version Log\n- Version 3, effective 28/09/2021: format of guideline; roles and responsibilities; re-organized the contents of guideline; setting purpose of using bullet repayment and portfolio limit of bullet repayment; setting portion limit of loan to each industries; revised number of rollover.\n- Version 2, effective 17/10/2020: credit approval process and authorities; term and condition of loan rollover.\n- Version 1, effective 12/02/2018: enactment.\n\nTerms and Definitions\n- The Bank's Target Market: the market of borrowers and transactions for which the Bank possesses undoubted risk management capabilities.\n- Credit Risk Rating: a quick and effective tool for risk asset management and provides insight to the quality of the bank's loan portfolio.\n- Loan to Value Ratio: is an assessment of lending risk that the bank examine before approving loan.\n- Hypothec: is a right established by law over a debtor's property that remaining in the debtor's possession.\n- Rollover Loan: the types of loan that pays only interest or pays some amount of the principal every month that still have balance of principal at the maturity date and need to roll to new term.\n- Debt Service Coverage Ratio: is the ratio of cash available for debt servicing to interest and principal. It is used in the measurement of an entity's (person or corporation) ability to produce enough cash to cover its debt payments.\n- Hard Title Deed: an ownership certificate provided by the Land Management and Planning Office.\n- Soft Title Deed: an ownership certificate provided by the local commune or district office and not registered at a national level, but are still considered a possessory status.\n- Loan to Related Parties: loan which granted to affiliates and related parties.\n\nAbbreviations\n- NBC: National Bank of Cambodia. The Bank: Phnom Penh Commercial Bank Plc. Branch: all branches (including department related to sales) of Phnom Penh Commercial Bank Plc.\n- SAP: Sales Planning Department. CSD: Credit Screen Department. CBC: Credit Bureau Cambodia. LVR: Loan To Value Ratio. RAAC: Risk Asset Acceptance Criteria.\n- CM: Credit Memorandum. CRR: Credit Risk Rating. USD: United States Dollar. KHR: Khmer Riel. MAA: Memorandum and Articles of Association. MFI: Microfinance Institution.\n\nA1. Objectives\n- A1.1 Establish clear standards, requirements, and rules for all positions and functions involved in granting and operating credit in the Bank.\n- A1.2 Specify the authorities and responsibilities involved in granting and operation of loans.\n- A1.3 Specify standardized mechanisms for controlling, monitoring, and operating credits.\n\nA2. Scope, Laws, Effective Date, Review and Owner\n- A2 Scope: this guideline applied to all credit operating in the bank.\n- A3 Related laws and regulations: NBC's Law and Regulation Applicable to Bank and Financial Institution.\n- A4 Effective date: 28/09/2021.\n- A5 Frequency of review: this guideline shall be reviewed at least annually or as deemed necessary.\n- A6 Revision/Abrogation of this guideline shall be approved by the Executive Committee.\n- A7 Owner: this guideline is under SAP.\n\nB1.1 Roles of the Executive Committee\n- B1.1.1 Approve any amendment/abolishment of this guideline.\n- B1.1.2 Other as stated in \"Directorate Policy\" and related policies.\n\nB1.2 Roles of the Credit Committee\n- B1.2.1 Review on Bullet Repayment Portion report and where appropriate provide recommendation and correction.\n- B1.2.2 Review on Industries Portfolio report and where appropriate provide recommendation and correction.\nB1.2.3 The Credit Committee has authority to approve or reject when there is a request for:\n- lower interest rate than which stated in product guideline (B1.2.3.1)\n- bigger loan size than which stated in product guideline (B1.2.3.2)\n- higher LVR than which stated in product guideline (B1.2.3.3)\n- bigger loan size than soft title deed's loan limit (B1.2.3.4)\n- Business Loan without collateral (B1.2.3.5)\n- B1.2.4 Other as stated in \"Credit Committee Guideline\".\n\nB1.3 Roles of SAP (Sales Planning Department)\n- B1.3.1 Ensure that the staff had conducted his due diligence properly and according to this guideline.\n- B1.3.2 Daily monitor the portion of loan repayment method and monthly report to Credit Committee, and any notice to branch related to restriction and release of loan for bullet repayment.\n- B1.3.3 Monthly report loan by sectors to Credit Committee with the highlight of high risk sector when there is increasing.\n- B1.3.4 Other reports which requirement from management or external regulator.\n\nB1.4 Roles of CSD (Credit Screen Department)\n- B1.4.1 Ensure all credits process and assessment shall be follow to guideline.\n- B1.4.2 Perform in-depth credit assessment and credit approval process for loan amount under the authority of CSD.\n- B1.4.3 Ensure that the collateral has been verified, checked, and evaluated.\n- B1.4.4 Monitor overdraft facilities account.\n\nB1.5 Roles of Branch\n- B1.5.1 Responsible for Credit Administration.\n- B1.5.2 Perform in-depth credit assessment and credit approval process for loan amount under the authority of branch.\n- B1.5.3 Ensuring appropriate environment representative, warranties and covenants are incorporated into all legal agreement.\n- B1.5.4 Other reports which requirement from Credit Committee, SAP, CSD, and management related loans or customers' information.\n- B1.6.1 Implement this guideline effectively and accurately.\n\nB2. Code of Conduct\nAll officers and staff are required to perform their work diligently and honestly. Officers and staff can't receive personal benefit (illegal) from any transactions or situation in which they are involved in credits. Officers and staff are forbidden and subject to the penalty of immediate dismissal whenever they are found that they:\n- B2.1 Solicit or receive on an unsolicited basis gifts, commissions, kickbacks or values of any kind from customers.\n- B2.2 Use their positions to conduct private business.\n- B2.3 Conduct any illegal or immoral activities acting in the capacity of officers and staff of the Bank.\n- B2.4 Engage in any other acts, behaviors, or arrangements that could seriously affect the Bank's reputation or profit.\n\nB3. Currency\n- All loan products in the bank shall be provided in USD and KHR Currency, and other currencies may be used if necessary. However, in the case of other currency use, it shall be approved by Credit Committee.\n\nB4. Loan Size\n- The bank can provide loan to its customer up to 20% of bank net worth. However, the maximum loan size of specified loan product shall be set separately in each product guideline.\n\nB5. Loan Products and Services\n- B5.1 Commercial Loan: commercial loans are granted to individual or corporate borrowers for their business purposes. B5.1.1 Business Loan: Micro Loan, Small Loan, Medium Loan, Large Loan. B5.1.2 SME Soben Loan. B5.1.3 SME Co-Financing Loan.\n- B5.2 Consumer Loan: Motor Loan, Car Loan, House and Home Improvement Loan, Songkhoem Loan.\n- B5.3 MFI Loan. B5.4 Bank Guarantee. B5.5 Letter of Credit Facilities. B5.6 Trade Facilities. B5.7 Card Facilities. B5.8 Loan Against Deposit. B5.9 Other loan products accordance to the Bank's guidelines.\n\nB6. Repayment Methods\n- Loan repayment will be complied with repayment schedule as stated in loan agreement/letter of offer. The repayment will be adhered to fixed date repayment method.\n- Customers' repayment capacities must be analyzed and assessed to ensure that loan will be repaid both principal and interest on time. Repayment capacity assessment based on customers' current income. If the income from business is not sufficient, other income assessment is recommended, but it requires to make a thoroughly analysis ensuring that borrowers really enable to repay the whole loan.\n\nB6.1 Bullet Repayment\n- B6.1 Bullet: pay only interest every month and principal will pay at the end of the loan period.\n- B6.1.1 Bullet repayment method is conducted only when necessary considering the cash flow of the borrower. In principle, it is to be provided for the purpose of operating funds. When there is a request loan with bullet repayment, it should conduct more carefully review than other repayment methods by comprehensively considering the borrower's financial purpose, cash flow, appropriateness of fund management and financial condition.\nB6.1.2 Bullet repayment shall not be granted to:\n- SME Soben Loan\n- SME Co-Financing Loan\n- Housing Loan\n- Car Loan\n- Motor Loan\n- Songkhoem Loan\n- Other consumer loans such as staff loan, etc.\n- Purpose for investment fund (especially purchase of real estate). However, in the case there is any request for bullet repayment for above purpose, it should be provided with the approval of the Credit Committee.\n- B6.1.3 Bullet repayment method shall not exceed 50% of total loan portfolio. However, in the case of the acquisition of loan receivables, merger with other institutions, and other unavoidable reasons, the repayment method for loans shall be restricted until the proportion of the repayment method falls within the guidelines.\n- B6.1.4 The portion of each repayment shall be monitored regularly and monthly report to Credit Committee and immediately notice when bullet repayment portion has been reached the limit.\n\nB6.2 Other Repayment Methods\n- B6.2 Negotiable (Partial): pay interest every month and some amount of principal (amount agreed in advance by agreement with the Bank), remaining principal will pay at the end of the loan period.\n- B6.3 Installment: monthly payment principal and interest (equal principal payment).\n- B6.4 Amortization: monthly fixed payment amount applied to principal each time varies with the remainder going to interest.\n- B6.5 Overdraft Facility: pay interest on demand. Overdraft facility is applied to Business Loan only and shall be used for short term finance only. However, in the case of an overdraft facility has had no net cash inflow for 60 days, the facility shall be converted to Fixed Term Loan.\n\nB7. Loan Purpose and Industry Limits\n- The bank provides loan to borrowers who have the clear purpose of supporting, expanding business or increasing profit or for consumption, etc, which is acceptable.\n- B7.1 Major categories of loan purpose (industries): Financial Institutions; Agriculture, Forestry and Fishing; Mining and Quarrying; Manufacturing; Utilities; Construction; Wholesale Trade; Retail Trade; Hotels and Restaurants; Transport and Storage; Information Media and Telecommunications; Rental and Operational Leasing Activities (excluded Real Estate Leasing and Rentals); Real Estate Activities; Other Non-Financial Services; Personal Lending; Mortgages, Owner-Occupied Housing only. The detail of major categories is listed in Appendix 2.\n- B7.2 The limit of loan portfolio to each industry shall not be over 25% of total loan portfolio.\n- B7.3 However, the portfolio of loan to Construction plus Real Estate Activities shall not exceed 40% of total loan portfolio.\n- B7.4 In the case of the acquisition of loan receivables, merger with other institutions, or other unavoidable reasons, the loan to the sector is restricted until the proportion of the sector falls within the guidelines mentioned above.\n- B7.5 The loan by industry shall be monitored regularly and monthly report to the Credit Committee.\n- B7.6 Prohibited Purposes: the Bank shall not grant loan for the purposes to industry/business as stated in Appendix 1.\n\nB8. Secured Lending\n- Loans must be supported by collateral that is unencumbered, on which the Bank can register a first priority lien or claim. Guaranteed loans, in cases of loans for which third party guarantees are presented in lieu of collateral, the Bank will require the same conformity with all requirements for guarantor as for the borrower.\n- B8.1 Type of collateral: Property (Land / Land and Building, including factory, warehouse, etc); Cash in Account; Vehicle Identification Card; another type of collateral specified in the separate product guideline shall be followed.\n- B8.2 LVR: it depends on the case but generally no more than 70%. However, in the case of a product for which the LVR is specified in the other guidelines, it shall be followed.\n- B8.4 The bank also opens the room for its unsecured loan which does not require collateral based on specified product design.\n\nB8.3 Loan Amount Limit on Type of Title Deed\n- B8.3.1 Hard Title Deed: up to 20% of bank net worth.\n- B8.3.2.1 Soft title deed registered at Sangkat/Commune: maximum loan size is up to USD 10,000 or equivalence.\n- B8.3.2.2 Soft title deed registered at Khan/District: maximum loan size is up to USD 100,000 or equivalence.\n- B8.3.2.3 However, in the case of a product for which the loan limit on each type of title deed is specified in the other guidelines, it shall be followed.\n\nB9. Target Market Discipline\n- B9.1 When approaching or being approached by potential loan customers, involved staff must carefully consider whether the potential borrower fits within the Bank's target market. Exceptions to Target Market are discouraged and will be subject to exceptional handling.\nB9.1.1 The Bank's Target Market is:\n- Domestic resident individuals engaged in business (note industry exceptions) who are financially sound, well established in their business fields, with ample liquidity and net worth, and of good character, and who are able to pledge collateral to the Bank.\n- Domestic resident corporations engaged in business that are financially strong (substantial positive net worth and cash flows) and have a history of lawful behavior and fulfillment of financial obligations.\n- Government of Cambodia corporate entities that produce strong and steady cash flows.\n- Foreign invested businesses duly registered and operating in Cambodia that are either financially sound on a stand-alone basis or are supported by the guarantee of a financially sound parent company.\n- Foreign financial institutions with rating above \"A (Investment grade)\" by reputable international rating agencies.\n- B9.1.2 Target Market Exceptions: loan applications for potential borrowers not conforming to the Target Market specified above will be considered Exceptions to Credit Operation Guideline.\n- B9.1.3 Prohibition, Non-Target Market Industries/Business: the specific industries/businesses stated in Appendix 1 are prohibited in granting any credit facilities.\n\nB9.1.4 Special Sector / High Risk Credit\n- B9.1.4.1 Certain sectors/industries/borrowers where the Bank may wish to lend present unusual risks. Loans to such borrowers can be included in the Bank's Target Market only if special risk management measures are taken, beginning with specialized due diligence (usually hiring professional valuation or technical/engineering or consulting firms).\nB9.1.4.2 Loan applications to the following borrowers must also be handled in accordance with the Exceptions Review and Approval Process:\n- Infrastructure (roads, bridges, ports, power project)\n- Energy: gas and oil, electric power (production, storage, transmission)\n- Petroleum and petrochemicals (plants, refineries, storage)\n- Commercial Real Estate Development\n- Transport (railways, airline, shipping, trucking)\n- Sectors designated by Credit Committee\n\nB10.1 Risk Asset Acceptance Criteria: Character and Status of Borrower\n- To enforce the Target Market Discipline, any borrowers or other credit obligors of the Bank shall meet the following specific RAAC.\n- B10.1.1 No history or record of defaulting on loan obligations in the Bank or in other financial institutions.\n- B10.1.2 An enterprise or factory with positive net worth, regular business activities, good management, most importantly the financial management, which is formally registered at the Ministry of Commerce.\n- B10.1.3 A producer, businessman/woman with formal business registration, positive net worth, normal business operation.\n- B10.1.4 The entrepreneur who has the know-how skills and trustworthiness.\n- B10.1.5 The business must have a location at present address for production, business or service, production facility, business facility, equity and potential market, etc.\n- B10.1.6 The business should be economically viable and stable to generate sufficient net revenues to repay the loan.\n\nB10.2 Requirements of Borrower\n- B10.2.1 Able to understand clearly the Bank's relevant policies and overall loan terms and conditions.\n- B10.2.2 Agreement of the borrower between husband and wife.\n- B10.2.3 The borrower must be well aware that he/she is a customer of the Bank, not the person(s) who receive fund donor (sponsor) from the Bank. The borrower is bound by the loan agreement with the Bank, and is responsible for loan repayment according to the terms and conditions therein.\n- B10.2.4 Appropriate amount of fund to support daily business activity.\n- B10.2.5 Willing and able to pledge to the Bank unencumbered collateral with the market (or assigned) minimum value and type required by the Bank.\n- B10.2.6 Willing to maintain his or her main transaction accordance with the Bank and to settle all business through this account.\n- B10.2.7 The borrower must have maintained a current account with the Bank.\n\nB10.3 Requirements of Guarantor\n- B10.3.1 Able to understand clearly the Bank's relevant policies and overall loan terms and conditions and must fully understand the content of the guarantee contract/agreement.\n- B10.3.2 Be competent to supplement and pay the borrower's debt in the event that the borrower defaults on a loan obligation.\n- B10.3.3 For a person who pledges his/her own assets as collateral against the loans, the bank also requires to be the Guarantor even though he/she has no income.\n- B10.3.4 However, in the case of a product for which the requirement of guarantor is specified in the other guidelines, it shall be followed.\n\nB11. Basic Credit Terms and Conditions\n- B11.1 Due Diligence: completion of due diligence and presentation in a written Loan Application for each new (renewed/rollover) loan.\n- B11.2 No Inferior Position: the Bank will never be in an inferior position to other creditors in respect to claims on the borrower's cash flows, assets, collateral.\n- B11.3 Amortizing basis is preferred.\n- B11.4 Main Settlement Bank: borrowers maintain main settlement accounts with the Bank if it is possible.\n- B11.5 Two Ways Out: all loans must have two identified and reliable sources of repayment \"two ways out\".\n- B11.6 Full Documentation: all loans must be documented with full and complete Registration, Guarantee Contract.\n- B11.7 Term Loan Covenants: contracts for medium and long term loans must include financial and non-financial covenants and events of default that will allow the Bank to call the loan before maturity if necessary to protect the Bank.\n- B11.8 Project Financing: the Bank will not finance 100% of the fund needs of investment projects.\n\nB12. Due Diligence Requirements and Process\n- B12.1 Performance of thorough due diligence is the first step in credit initiation. The due diligence process involves three steps: Step One, customer/potential borrower interview (data gathering); Step Two, writing the CM (risk analysis); Step Three, collateral verification (verification and valuation).\n- B12.2.1 The primary responsibility for step one, customer interview and data gathering, is assigned to the Loan Officer.\n- B12.2.2 Step Two: the Loan Officer is primarily responsible for producing the credit analysis. The loan officer must sign and get confirmation from the branch manager and approval from the related department, and by their signatures take responsibility for the accuracy of the data and quality of analysis therein.\n- B12.2.3 Step Three: CSD is primarily responsible for the accuracy of collateral verification.\n\nB13.1 Credit Administration\n- B13.1.1 Checking for completeness and accuracy, and for compliance with the Credit Policy and Credit Operations Guideline. CMs that do not comply with this guideline should be returned to the loan officer.\n- B13.1.2 If the CMs contain guideline Exceptions, verifying that Credit Operation guideline Exceptions are properly highlighted and analyzed in the CM.\n- B13.1.3 Administering the routing of the CMs to the Credit Committee as required by this guideline.\n- B13.1.4 Checking of the Collateral Property Right with the Cadastral Survey Office.\n- B13.1.5 Preparing disbursements and other documentation for signature.\n- B13.1.6 Handling opening of a customer account and credit of loan proceeds to the customer account.\n- B13.1.7 Collecting and preparing of documents relating to collateral pledging.\n- B13.1.8 Filing the CMs and loan related documents.\n- B13.1.9 Performing for each credit transaction and valuation of the collateral offered by the borrower follows the Collateral Investigation Guideline.\n- B13.1.10 Preparing the collateral documents (original title deeds, car ID, etc) and other legal documents to keep in the safe room of PPCBank's Head Office (for branches in Phnom Penh area). For provincial branches, those documents shall be kept by the branch.\n\nB13.2 Loan Agreement, Letter of Offer and Mortgage / Hypothec Agreement\n- B13.2.1 The loan agreement/letter of offer shall be made at least in 2 (two) copies. The Loan Agreement/Letter of Offer is made with the private company or individual affixed with signature and/or right thumbprint agreed between the Bank as the Lender and the Borrower in front of the lawyer assigned by the Bank. The Bank is responsible for ensuring that the loan agreement/letter of offer is well kept as evidence until the full disbursed amount is repaid.\n- B13.2.2 Mortgage/Hypothec Agreement: a document affixed with signature and/or right thumbprint agreed between the Bank as Lender and the Borrower(s) (husband and wife if applicable) and/or between the Bank as Lender and the third party (guarantor/mortgagor) who voluntarily offers up his/her own movable or immovable property title to secure the borrower's loan and shall be willing to take equal responsibility for the repayment of the loan.\n- B13.2.2.1 The Mortgage/Hypothec Agreement is required to have the acknowledgement of the Head of Commune or District Governor officer who is in charge of property title. After obtaining the property title, the Bank must freeze the collateral at the Municipal Department / Provincial Office of Land Management, Urban Planning, Construction and Cadastre to protect the mortgaged assets from being sold or transferred to another party. The acknowledgement requirement is detailed in Appendix 3.\n- B13.2.2.2 When there is a request for exception on mortgage/hypothec, it shall be approved by CSD/Credit Committee.\n- B13.2.2.3 The Bank is responsible for ensuring that the mortgage/hypothec agreement is well kept as the evidence for any legal measure in case the borrower did not comply with the terms and conditions of the loan agreement/letter of offer. Once the total loan amount is repaid, the Bank shall return the property title to the obligor or the provider of the mortgage/hypothec with a Debt Settlement Letter/other related letter for the borrower to release or cancel the protection of the title.\n- B13.2.3 In the case of a product for which the other legal documents are specified in the other guidelines, it shall be followed.\n\nB13.3 Disbursement Approval and Interest Collection\n- B13.3 Disbursement Approval: loan disbursement (drawdown) or establishment of L/C facilities cannot be made until a disbursement proposal has been signed and presented.\n- B13.4 Interest Collection: loan interest will be collected according to the terms of the loan agreement/letter of offer, normally every month. It is the policy of the Bank to debit interest from the borrower's accounts with the Bank.\n- B13.4.1 The branch will check balances in the customers' accounts prior to debiting the accounts. If balances are insufficient to cover the scheduled collection amount, the branch's staff will contact the customer and demand the customer make a deposit.\n- B13.4.2 Failure of the customer to maintain sufficient funds in their account to cover scheduled interest and principal repayments constitutes an event of default requiring immediate actions as specified in the Credit Management Guideline.\n\nB14. Information To Be Maintained in Credit File\n- B14.1.1 Natural person: names, ages, identities, address, contact address, occupation, employer, salary/income, financial position/net worth and any other relevant information.\n- B14.1.2 Legal person: names, registration, license, contact, address, constitution (proprietorship, partnership), business background and history, organization structure, management team/directors, shareholders/proprietor/partners, financial position and performance, and any other relevant information.\n- B14.2 Information on credit facility: description of facility type (term loan, overdraft, etc); purpose of the loan; terms of facility limits, currency, interest rates, repayment schedules, tenor/term, expiry dates; collateral title deed number, location, types, valuation amount, valuation date and where applicable name of appraiser; guarantors names, financial position and net worth; loan repayment schedule with thumb print (if term loan).\n- B14.3 Information for appraisal of loan (certain information would not be applicable for natural persons): assessment and recommendations of loan officer/manager; approval and basis of approval by management/credit committee; qualitative analyses (borrower information, history of relationship, banking relationship of related groups, information from other institutions and related offices of the Bank, credit report from Credit Reporting System, analysis of industry and business risk, single customer concentration if appropriate); quantitative analyses (financial position and performance previous, current and projected; business plans, sources and cash flow forecast for meeting repayment requirements); capital resources; other commitments; collateral appraisal and value.\n\nB15. Credit Risk Rating\n- B15.1 All borrowers and credit transactions in the Bank will be assigned risk ratings according to the Bank's risk rating system. CRR will be applied to the borrowers and transactions as a key and indispensable part of the credit approval process.\n- B15.2 Objectives of CRR: to evaluate loan proposals and identify weak accounts and to impose close monitoring and/or prompt pre-emptive remedial measures to prevent NPL; to prioritize monitoring effort; to identify good and deserving customers for further credit enhancement; to guide approving authority in approvals of urgent requests and temporary facilities.\n- B15.3.1 All loan accounts (including new/renew/rollover) regardless of the aggregate loan amount or loan type are to be graded.\n- B15.3.2 CRR will be reviewed and updated or assigned at least annually, and in the event of: change of loan terms and conditions, including extension; repayment irregularities or delinquencies (if necessary); reverse information relating to the borrower or transaction.\n- B15.4 The two core components of the CRR score sheets are Customer Credit Rating (evaluation of credit risk based solely on the customer standing and their business) and Security Rating (evaluation based solely on security types and whether the loans are secured, partly secured or clean).\n- B15.5 Types of CRR score sheet: CRR Score Sheet for Corporate and CRR Score Sheet for Individual (Appendix 4 and Appendix 5).\n\nB15.6 Five Grades in CRR\n- Grade A: score 80% to 100%.\n- Grade B: score 60% to less than 80%.\n- Grade C: score less than 60%.\n- Grade D: Special Mention or under Remedial Action.\n- Grade E: Substandard (more than 3 to less than 6 months in arrears).\n\nB16. Debt Service Coverage Ratio\n- DSCR is used in the measurement of an entity's (person or corporation) ability to produce enough cash to cover its debt payments. The higher this ratio is, the easier it is to obtain a loan. It may be expressed as a minimum ratio that is acceptable to the Bank and may be a loan condition.\n- B16.1 Calculation of DSCR: DSCR = Net Operating Income (EBITDA) divided by Debt Service (principal + interest).\n- B16.1.1 Term for calculation of debt service for principal: for loans with bullet, negotiation and overdraft repayment, use a term of 72 months; for loans with amortization or installment repayment, use the actual loan term; for credit card, use a term of 48 months.\n- B16.2 Repayment Capacity: loan size is based on the net income of each customer; the DSCR is over and equal 1.5 times (DSCR ≥ 1.5). Only the Credit Committee has authority to approve on DSCR equal or over 1.2 (DSCR ≥ 1.2). However, in the case of a product/promotion for which the DSCR is specified, it shall be followed.\n\nB17. Credit Approval Process and Authorities\n- B17.1.1 All Loan Product Process: total exposure to the borrower which is equal to or less than the limit of loan amount in accordance with that specified in the Credit Committee Guideline.\n- B17.1.2.1 Large and High Risk Credit Process: total exposure to the borrower which is more than the limit of loan amount set by the Credit Committee shall be reviewed and approved by the Credit Committee.\n- B17.1.2.2 Total exposure to the borrower which is equal to or less than the limit of loan amount set by the Credit Committee, but not in accordance with the guidelines of each loan product, shall be approved by the Credit Committee.\n- B17.1.3 The Credit Committee has a right to delegate CSD and Branches to approve loans at some amount. In the case of a product for which the delegation amount is specified in the other guideline, it shall be followed.\n- B17.1.4 The CSD shall notify the branch of its approval within 5 working days of receipt of the loan application. The notice period may be extended within 5 working days if it is unavoidable, such as when the application needs to be supplemented. If the results are not notified within 10 days from the date of receipt, the senior manager of the Credit Screen Department should be notified in writing.\n- B17.1.5 Branch should submit the loan request with full documents to CSD. In case CSD requires more supporting documents, CSD should immediately notify the branch.\n- B17.2 Related Parties Transactions: review and approval must follow the process specified in the Credit Policy and, in each instance, additionally require the review and approval of the Credit Committee of the Bank.\n\nB18. Exception Review and Approval Process\n- B18.1 Any transaction failing to satisfy completely the requirements and standards set forth above will be handled according to the exception review and approval.\n- B18.2 It is the responsibility of CSD, when analyzing the credit file, to specifically indicate and comment on any exceptions to the policy present in the credit, to check and verify that a transaction is not an exception, or if it is an exception, to ensure it is handled according to exceptions review and approval. The Credit Committee shall follow the Exceptions Review and Approval Process when reviewing and approving credit that contains exceptions.\n- B18.3.1 Target Market Exceptions: Target Market exceptions including Special Sector/High Risk Credits of any amount must be approved by the Credit Committee.\n- B18.3.2 RAAC Exception: RAAC exceptions must be clearly identified in writing and approved by the full Credit Committee, regardless of size of loan.\n- B18.3.3 Excess of Regulatory or House Limits.\n- B18.3.4 Documentation Exceptions: any CM or transaction not documented fully and completely as required in this guideline must be approved by the full Credit Committee and by the full Risk Management Committee of the Credit Committee, following a review and written signoff.\n- B18.3.5 Complicated Transaction: transactions that are particularly complicated, involve unusual structures, do not fit within the categories of products and transactions presented in B7, involve multi parties, complicated settlement processes or unusual documentation should be treated as Policy Exceptions and must be reviewed and approved by the Credit Committee. The Credit Committee is expected to require outside legal review before approving complicated transactions.\n- B18.3.6 Other Guidelines Exceptions: other guideline exceptions should be handled with special due diligence and prudence by all parties involved in the approval. At minimum, the reason for the exception must be clearly identified and commented on in the due diligence, review and approval process. All parties must explicitly, in writing, justify why the exception should be permitted, and take responsibility for this decision.\n\nB19. Loan Application Form\n- The Loan Application Form requires the borrower/guarantor to fill in their information in order to request a loan from the Bank. The Loan Application Form must also contain the consent clause for getting Credit Reporting Information of the borrower/guarantor from the Credit Reporting System.\n\nB20.1 Document Requirement for Individual Borrower\n- B20.1.1 Personal documents: valid identity card or passport with thumb print (in case of foreigner or lost identity card) (copy); family book or book of residence (copy); phone number of borrowers and guarantors; title deed of residence (copy); resident picture with location and map.\n- B20.1.2 Collateral information: collateral title deed (copy); consent letter from collateral owner which allows the bank to keep the original certificate of title deed if collateral is property (sample in Appendix 6); property evaluation report; collateral picture with location and map.\n- B20.1.3 Income from salary: employee's card (copy); pay slip; salary confirmation letter (original); bank statement for payroll.\n- B20.1.4 Income from business: any business license; business invoice; income statement of latest 3 months (if have); business pictures with location and map; other supporting documents proof of income.\n- B20.1.5 Loan with other banks (if any): loan repayment schedule with other banks; bank statement; loan contract/agreement with other banks; title deed receipt with other banks (if any).\n\nB20.2 Document Requirement for Corporate Borrower\n- B20.2.1 Company information: patents (copy); board resolution (if any) (copy); all current business licenses (copy); MOA (copy); shareholder information; business pictures with location and map.\n- B20.2.2 Collateral information: collateral title deed (copy); consent letter from collateral owner which allows the bank to keep the original certificate of title deed if collateral is property (sample in Appendix 6); property evaluation report; collateral picture with location and map.\n- B20.2.3 Income information: income statement of latest 3 months; the latest balance sheet; business invoices (copy); bank statement of latest 3 months; other supporting documents proof of income.\n- B20.2.4 Loan with other banks (if any): loan repayment schedule with other banks; bank statement; loan contract/agreement with other banks; title deed receipt with other banks (if any).\n- In the case of a product for which the required documents are specified in the other guideline, it shall be followed.\n\nB21. Loan Rollover\n- The bank allows loans with bullet repayment, negotiation, and overdraft facility to be rolled over on the maturity date.\n- B21.1 Branch shall check clearly with the borrower who has a loan with bullet repayment, negotiation or overdraft facility at least 2 months before maturity date whether the borrower is going to pay off or rollover. In case the borrower requests to rollover, the following criteria shall be followed.\n- B21.1.1 New loan term and condition shall be discussed and agreed.\n- B21.1.2 Credit assessment and risk analysis shall be conducted the same as a new loan request: purpose of using fund; source of income; repayment capacity; repayment history; check credit report; collateral situation.\n- B21.1.3 For bullet repayment loans, in case the borrower still requests bullet repayment for rollover or next rollover, the loan shall be assessed more precisely about the use of fund and shall follow the bullet repayment criteria. In the case the loan purpose is not for operating fund, other repayment methods shall be preferred.\n- B21.1.4 The bank has the right to not rollover / to ask the borrower to pay back at maturity date when the bank found that the loan has had bad repayment history, use of fund with wrong purpose, etc.\n\nB21.2 Maximum Period of Rollover for Bullet Repayment\n- Loan amount up to and including USD 1,000,000: maximum rollover period with bullet repayment is 5 years (counted from the date of first rollover).\n- Loan amount above USD 1,000,000: maximum rollover period with bullet repayment is 3 years (counted from the date of first rollover).\n- After reaching the limit of rollover with bullet repayment, the new repayment method shall be principal plus interest payment. Converting to an overdraft facility is not accepted.\n\nAppendix 1: Prohibited Industries and Businesses\n- Business activities which could seriously be harmful to environment and society or seriously impacted by noise or smell to neighbor or community.\n- Production or trade in weapons and munitions (does not apply to project sponsors who are not substantially involved, meaning the activity is ancillary to the sponsor's primary operations).\n- Production or activities involving harmful or exploitative forms of forced labor / harmful child labor.\n- Business activities involving any form of prostitution or human trafficking.\n- Production or trade in radioactive materials (does not apply to the purchase of medical equipment, quality control (measurement) equipment and any equipment where the bank considers the radioactive source to be trivial and/or adequately shielded).\n- Drift net fishing in the marine environment using nets in excess of 2.5 km in length.\n- Commercial logging operations or trade in primary tropical moist forest or forest areas with high biodiversity or conservation value which is banned by the Cambodian Government and International Community.\n- Trade in wildlife or wildlife products regulated under Cambodian Law and International Law.\n- Production or trade in pesticides/herbicides and chemicals prohibited by national and international law/regulations.\n- Production or trade in pharmaceuticals prohibited by national and international law/regulations.\n- Production or trade in ozone depleting substances prohibited by national and international law/regulations.\n- Cross border trade in hazardous materials regulated by Cambodian Law.\n- Production or trade activities which could damage heritage and culture of Cambodia.\n- Business activities that impinge on forced eviction and/or land grabbing.\n- Other production or trade regulated by Cambodian and international law.\n\nAppendix 2: Detail of Major Loan Categories\n- Financial Institutions: National Bank of Cambodia (Central Bank); depository institutions (commercial banks, depository microfinance institutions, other depository institutions); other financial institutions (specialized banks, licensed microfinance institutions, life insurance, general insurance, pension funds, stock exchange and stockbrokers, others).\n- Agriculture, Forestry and Fishing; Mining and Quarrying.\n- Manufacturing: food products; beverage and tobacco; textile, wearing apparel and leather products; wood products and paper; printing; petroleum, coal, chemical, polymer and rubber; non-metallic minerals; metal and metal products; transport equipment; machinery and equipment; furniture and other manufacturing.\n- Utilities: electricity; gas; water, sewerage and drainage; waste collection, treatment and disposal.\n- Construction: property development (industrial, commercial, tourism related, residential, others); heavy construction; land management; other construction.\n- Wholesale Trade (import, export, other); Retail Trade; Hotels and Restaurants; Transport and Storage; Information Media and Telecommunications.\n- Rental and Operational Leasing Activities, excluded real estate leasing and rentals: renting of machinery and equipment without operator and of personal and household goods; rental of transport equipment; rental of other machinery and equipment; rental of office machinery and equipment (including computers).\n- Real Estate Activities: real estate operation (industrial, commercial, tourism related, residential, other); real estate service providers for a fee (real estate agents and similar activities).\n- Other Non-Financial Services: public administration, social security, health, veterinary, social work, education, sanitation, membership organizations, entertainment, news and cultural activities, sport and recreation, private households with employed persons, extra-territorial organizations, packing, cleaning and security guard services, and other service activities.\n- Personal Essentials: personal lending (secured, excluding mortgages to purchase owner-occupied housing; unsecured); credit cards; mortgages, owner-occupied housing only. Other Lending.\n\nAppendix 3: Mortgage / Hypothec Acknowledgement Requirement\n- Soft or hard title deed, loan amount up to USD 10,000: acknowledged by Sangkat/Commune.\n- Soft or hard title deed, loan amount up to USD 30,000: acknowledged by Khan/District.\n- Soft title deed, loan amount above USD 30,000: acknowledged by Khan/District.\n- Hard title deed, loan amount above USD 30,000: acknowledged by Cadastral Office.\n- In the case Khan/District authorizes the Sangkat/Commune to sign the mortgage/hypothec letter or other requirements from the government authority, it shall be followed.\n- The aggregated amount shall be consolidated for the acknowledgement requirement when the title deed is used to secure multiple loan accounts.\n- When there is a request for an additional loan on existing collateral and the total of additional plus existing loan outstanding is over the amount already mortgaged/hypothecated: for a soft title deed, only the additional amount shall be stated in the new mortgage/hypothec agreement; for a hard title deed with total amount up to USD 30,000, only the additional amount shall be stated; for a hard title deed with total over USD 30,000 and previous mortgage/hypothec at Sangkat/Khan, the total amount shall be stated and acknowledged by the Cadastral Office; for a hard title deed with total over USD 30,000 and previous mortgage/hypothec at the Cadastral Office, only the additional amount shall be stated and acknowledged again by the Cadastral Office.\n- When the additional loan plus existing loan outstanding does not exceed the amount of the previous mortgage/hypothec, a new mortgage/hypothec agreement is not required, but \"refer to previous mortgage/hypothec agreement\" shall be mentioned in the additional loan agreement/letter of offer.\n- When there is a requirement to re-mortgage/hypothec from the Credit Approval Authority, it shall be followed.\n\nAppendix 4: CRR Score Sheet for Individual\n- Customer credit rating: customer's net worth (weight 16): large means above USD 1M score 4; good means above USD 300K to USD 1M score 3; moderate means above USD 50K to USD 300K score 2; small means below USD 50K score 2.\n- Age of customer (weight 8): 40 to 65 years score 4; 30 to 39 years score 2; 20 to 29 years score 1; above 65 years score 0.\n- Debt servicing ratio (weight 16): above 5.0 score 4; above 3.0 to below 5.0 score 3; above 2.0 to 3.0 score 2; above 1.0 to 2.0 score 1; below 1.0 score 0.\n- Security rating, property security (weight 60): excellent LVR below 40%: building in residential and commercial area 4; empty land in residential and commercial area 3.75; agricultural land / land in remote area 3.5; soft title deed 3.25; personal or corporate guarantee, debenture 2; borrower's own credit 1. Good LVR 40% to 50%: 3.75, 3.5, 3.25, 3.15, 2, 1. Moderate LVR above 50% to 70%: 3.5, 3.25, 3.15, 3, 2, 1. Fixed deposit: LVR up to 80% score 4; LVR above 80% to 100% score 3.75.\n- Overall CRR score = (total score / 4) x 100%, graded per B15.6.\n\nAppendix 5: CRR Score Sheet for Corporate\n- Business/management track record (weight 10): well established business 4; established business 3; business vulnerable to changes 2; new or unpredictable business 1.\n- Management qualification/experience (weight 10): highly qualified/experienced 4; qualified/experienced 3; least qualified/experienced 2; non-qualified/experienced 1.\n- Prospect of industry (weight 10): very good outlook 4; satisfactory 3; uncertain 2; poor 1.\n- Financial profile: growth of turnover/net profit (weight 5): 30% and above 4; 20% to below 30% 3; 10% to below 20% 2; below 10% 1; negative 0. Leverage ratio TL/NW (weight 5): below 1.0 score 4; 1.0 to below 3.0 score 3; 3.0 to 5.0 score 2; above 5.0 score 1; insolvent 0. Debt servicing ratio (weight 15): above 5.0 score 4; above 3.0 to below 5.0 score 3; above 2.0 to 3.0 score 2; above 1.0 to 2.0 score 1; below 1.0 score 0. Interest coverage ratio (weight 5): same bands as debt servicing ratio.\n- Security rating, property security (weight 40): same scores by LVR band as the individual sheet. Fixed deposit: LVR up to 80% score 4; above 80% to 90% score 3.75; above 90% to 100% score 1.\n- Overall CRR score = (total score / 4) x 100%, graded per B15.6.\n\nAppendix 6: Letter of Consent Keeping Collateral at Bank\n- Sample letter (English and Khmer) in which the debtor(s) consent to PPCBank holding the original certificate of title deed (title deed number, size, date, issuer, location and owners) for the loan granted under the letter of offer until the loan is fully settled, signed with the right thumbprint of the property owner(s).\n";
 const SEED_DOCS = [
+{name:"Credit Operation Guideline v3 (Effective 28-09-2021).pdf", level:2, depts:["All"], text: CREDIT_OPS_DOC},
 {name:"Credit Policy Manual 2026.txt", level:2, depts:["Credit","Retail Banking"], text:
 `CREDIT POLICY MANUAL 2026
 
@@ -1652,6 +1678,7 @@ $("#loginForm").onsubmit = async e => {
   const fail = t => { msg.textContent = t; msg.className = "msg err"; $("#pw").value = ""; };
   if(!idValid(id)) return fail("User ID must be a 6-digit number.");
   if(!pw) return fail("Enter your password.");
+  msg.textContent = "Signing in…"; msg.className = "msg";   // password check takes a moment on phones
   const all = users(), u = all[id];
   const sMins = lockedFor("staff:" + id); if(sMins) return fail(`Too many incorrect attempts. Try again in ${sMins} minute(s).`);
   if(!u || !await verifyPassword(u, pw)){ noteFailure("staff:" + id);
@@ -2061,13 +2088,13 @@ const SYN_GROUPS = [
   ["exempt","exemption","waive","waiver","waived","waiving"],
   ["credit screen department","credit screening department","credit screen"],
   ["disbursement","disburse","drawdown","draw down","loan release","release the loan","disbursed"],
-  ["hypothec","hypothecation","mortgage registration","mortgage"],
+  ["hypothec","hypothecation","mortgage registration","mortgage","collateral registration"],
   ["restructure","restructuring","reschedule","rescheduling","loan restructure"],
   ["overdue","arrears","arrear","past due","late payment","late repayment"],
   ["approval authority","delegated authority","delegation of authority","authority to approve"],
   ["delegate","deligate","delegation","delegated"],
   ["collateral","security","pledged asset","pledge"],
-  ["title deed","land title","hard title","property title"],
+  ["title deed","land title","property title"],
   ["evaluation","valuation","appraisal","evaluate","valuate","appraise"],
   ["tenor","term","loan period","tenure","loan term"],
   ["loan to value","ltv","lvr","loan-to-value","loan-to-value ratio","loan to value ratio"],
@@ -2078,7 +2105,7 @@ const SYN_GROUPS = [
   ["interest rate","rate of interest"],
   ["guideline","policy","procedure"],
   ["minute","meeting minute","committee minute"],
-  ["transfer ownership","transfer of ownership","title transfer","ownership transfer"],
+  ["transfer ownership","transfer of ownership","title transfer","ownership transfer","ownership transfer of collateral"],
   ["escrow account","escrow"],
   ["write off","write-off","writeoff"],
   ["rollover","roll over","renewal","renew"],
@@ -2086,7 +2113,9 @@ const SYN_GROUPS = [
   ["red flag","fraud indicator","warning sign","suspicious pattern"],
   ["risk rating","credit grade","risk grade","credit rating","risk grading"],
   ["early settlement fee","pre-closure fee","pre closure fee","preclosure fee","pre-closure charge"],
-  ["completion","complete","completed","finish","finished","done"]
+  ["completion","complete","completed","finish","finished","done"],
+  ["debt service coverage ratio","coverage ratio","debt service coverage"],
+  ["approve","approved","authorize","authorized","authorise","authorised","sign off","signs off","signed off","sign-off"]
 ];
 
 /* ---------- Banking Terminology Dictionary (500 terms, EN/KM) from Banking_RAG_Terminology_500.xlsx ---------- */
@@ -2406,13 +2435,17 @@ function mdLite(text, withCites){
   const inl = s => { s = s.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/(^|[\s(])_([^_]+)_(?=[\s).,]|$)/g,"$1<em>$2</em>").replace(/`([^`]+)`/g,"<code>$1</code>"); return withCites ? s.replace(/\[(\d+)\]/g,'<button class="cite" data-ref="$1" aria-label="Open reference $1">$1</button>') : s; };
   let tbl = null;
   const flushTbl = () => { if(!tbl) return; const rows = tbl.filter(r=>!/^\s*\|?\s*:?-{2,}/.test(r));
-    const cells = r => r.trim().replace(/^\||\|$/g,"").split("|").map(x=>inl(x.trim()));
+    const cells = r => r.trim().replace(/^\||\|$/g,"").split("|").map(x=>{ const t = x.trim(); const lv = /^(low|medium|high)$/i.exec(t); const yes = /^yes$/i.test(t); return lv ? `<span class="risk-chip risk-${lv[1].toLowerCase()}">${t}</span>` : yes ? `<b>${t}</b>` : inl(t); });
     out += `<div class="tbl-wrap"><table class="ans-tbl">${rows.map((r,i)=>`<tr>${cells(r).map(c=>i===0?`<th>${c}</th>`:`<td>${c}</td>`).join("")}</tr>`).join("")}</table></div>`; tbl = null; };
   lines.forEach(l=>{
     let m;
     if(/^\s*\|.*\|\s*$/.test(l)){ close(); (tbl = tbl || []).push(l); return; }
     flushTbl();
-    const lab = l.match(/^\s*\**\s*(OVERALL RISK|RISK LEVEL|KEY FINDINGS|RED FLAGS|CONCLUSION|FINANCIAL RATIOS|RISK ASSESSMENT|MATCH RESULT|SIMILARITY SCORE|CONFIDENCE LEVEL|MATCHING FEATURES|OBSERVATIONS|EXECUTIVE SUMMARY|RISK RATING|VERIFIED FINDINGS|RECOMMENDATION|CASE DETAILS|APPROVAL AUTHORITY|APPROVAL CONDITIONS|SUPPORTING REFERENCES|ESCALATION REQUIREMENTS|SPECIAL CONDITIONS)\s*:?\s*\**\s*:?\s*(.*)$/);
+    const lab = l.match(/^\s*\**\s*(OVERALL RISK|RISK LEVEL|KEY FINDINGS|RED FLAGS|CONCLUSION|FINANCIAL RATIOS|RISK ASSESSMENT|MATCH RESULT|SIMILARITY SCORE|CONFIDENCE LEVEL|MATCHING FEATURES|OBSERVATIONS|EXECUTIVE SUMMARY|RISK RATING|VERIFIED FINDINGS|RECOMMENDATION|FINDINGS|REQUIRES VERIFICATION|CASE DETAILS|APPROVAL AUTHORITY|APPROVAL CONDITIONS|SUPPORTING REFERENCES|ESCALATION REQUIREMENTS|SPECIAL CONDITIONS)\s*:?\s*\**\s*:?\s*(.*)$/);
+    const rh = l.match(/^\s*(🔴|🟠|🟢)\s*\**\s*(High Risk|Medium Risk|No Issue)\b\**\s*$/i);
+    if(rh){ close(); out += `<p class="risk-head rh-${rh[2].split(" ")[0].toLowerCase()}">${rh[1]} ${rh[2]}</p>`; return; }
+    const rlv = !lab && l.match(/^\s*\**\s*risk level\s*\**\s*:\s*\**\s*(low|medium|high)\b/i);
+    if(rlv){ close(); out += `<p class="exec-label"><strong>Risk Level:</strong> <span class="risk-chip risk-${rlv[1].toLowerCase()}">${rlv[1].toUpperCase()}</span></p>`; return; }
     if(lab){ close(); const v = lab[2].replace(/\*\*/g,"").trim(), mt = /^(match|partial match|no match)\b/i.exec(v);
       const rr = /^(no significant concern|low risk|medium risk|high risk|critical review required)\b/i.exec(v);
       const lvl = rr ? [null, {"no significant concern":"low","low risk":"low","medium risk":"medium","high risk":"high","critical review required":"high"}[rr[1].toLowerCase()]] : /^(low|medium|high)\b/i.exec(v);
@@ -2424,7 +2457,9 @@ function mdLite(text, withCites){
     if(/^# /.test(l)){ close(); out += `<h3 class="ans-h1">${inl(l.slice(2))}</h3>`; }
     else if(/^#{2,4} /.test(l)){ close(); const h = l.replace(/^#{2,4} /,""), tg = h.match(/\s\[(High|Medium|Low)\]$/);
       out += `<h4 class="ans-h">${inl(tg ? h.slice(0, tg.index) : h)}${tg ? ` <span class="rel-chip rel-${tg[1].toLowerCase()}" title="Relevance: ${tg[1] === "High" ? "90% or more" : tg[1] === "Medium" ? "70-89%" : "50-69%"}">${tg[1]}</span>` : ""}</h4>`; }
-    else if((m = l.match(/^[-•] (.*)/))){ if(list!=="ul"){ close(); out+="<ul>"; list="ul"; } out += `<li>${inl(m[1])}</li>`; }
+    else if((m = l.match(/^\s*[-•] ?(.*)/)) && /^\s*[-•]/.test(l)){ if(list!=="ul"){ close(); out+="<ul>"; list="ul"; }
+      const lb = m[1].match(/^(Issue|Evidence|Action Required|Verification Required):\s*(.*)$/);
+      out += `<li>${lb ? `<strong>${lb[1]}:</strong> ${inl(lb[2])}` : inl(m[1])}</li>`; }
     else if((m = l.match(/^\s*\d+[.)] (.*)/))){ if(list!=="ul"){ close(); out+="<ul>"; list="ul"; } out += `<li>${inl(m[1])}</li>`; }
     else if(l.trim()===""){ close(); }
     else { close(); out += `<p>${inl(l)}</p>`; }
@@ -2518,8 +2553,11 @@ function loadScript(src){
   if(!loaded[src]) loaded[src] = new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => { delete loaded[src]; rej(new Error("load failed")); }; document.head.appendChild(s); });
   return loaded[src];
 }
-const MAX_TEXT = 120000;
+const MAX_TEXT = 120000, MAX_PDF_PAGES = 500, MAX_FULL_TEXT = 3000000, STORED_TEXT = 120000;
+const fullTexts = new Map(), pageInfo = new Map();   // complete extracted text and page counts for files read this session
+let lastPages = null;
 async function extractText(file){
+  lastPages = null;
   const e = extOf(file.name);
   try{
     if(["txt","md","csv","json","log","xml","tsv"].includes(e) || (file.type||"").startsWith("text/") && !["html","htm"].includes(e))
@@ -2539,12 +2577,20 @@ async function extractText(file){
       await loadScript(LIBS.pdf);
       const lib = window.pdfjsLib; lib.GlobalWorkerOptions.workerSrc = LIBS.pdfWorker;
       const pdf = await lib.getDocument({data: new Uint8Array(await file.arrayBuffer())}).promise;
-      let out = "";
-      for(let i=1; i<=Math.min(pdf.numPages, 60) && out.length < MAX_TEXT; i++){
+      let out = "", read = 0;
+      for(let i=1; i<=Math.min(pdf.numPages, MAX_PDF_PAGES) && out.length < MAX_FULL_TEXT; i++){
         const pg = await pdf.getPage(i); const c = await pg.getTextContent();
-        out += c.items.map(x=>x.str).join(" ").replace(/\s{2,}/g," ") + "\n\n";
+        // keep line breaks: items on a new line (different y position) start a new line, so statement rows stay intact
+        // rebuild visual lines: group text by vertical position, then order each line left to right
+        const its = c.items.filter(x=>(x.str||"").trim()).map(x=>({s: x.str, x: x.transform ? x.transform[4] : 0, y: x.transform ? x.transform[5] : 0})).sort((a,b)=>b.y - a.y || a.x - b.x);
+        const groups = [];
+        its.forEach(it=>{ const g = groups.length && Math.abs(groups[groups.length-1].y - it.y) <= 2 ? groups[groups.length-1] : null; if(g) g.items.push(it); else groups.push({y: it.y, items: [it]}); });
+        const lines = groups.map(g=>g.items.sort((a,b)=>a.x - b.x).map(i=>i.s).join(" ").trim());
+        out += `--- Page ${i} of ${pdf.numPages} ---\n` + lines.filter(Boolean).map(l=>l.replace(/\s{2,}/g," ")).join("\n") + "\n\n";
+        read = i;
       }
-      return out.slice(0, MAX_TEXT);
+      lastPages = {total: pdf.numPages, read};
+      return out;
     }
   }catch(err){ console.warn("Text extraction failed", err); }
   return null;
@@ -2554,7 +2600,9 @@ async function readFiles(fileList){
   for(const f of [...fileList]){
     const text = await extractText(f);
     const id = uid(); fileBlobs.set(id, f);
-    recs.push({id, name:f.name, size:f.size, type:f.type||"", added:Date.now(), text: text && text.trim() ? text : null, indexed: !!(text && text.trim())});
+    if(text && text.length > STORED_TEXT) fullTexts.set(id, text);   // analysis uses the complete text; storage keeps a shorter copy
+    if(lastPages) pageInfo.set(id, lastPages);
+    recs.push({id, name:f.name, size:f.size, type:f.type||"", added:Date.now(), text: text && text.trim() ? text.slice(0, STORED_TEXT) : null, indexed: !!(text && text.trim()), pages: lastPages || undefined});
   }
   return recs;
 }
@@ -2598,7 +2646,7 @@ function send(){
   i.value = ""; pending = []; autoGrow();
   // determine the mode automatically: policy questions -> knowledge search; analytical requests -> banking expert
   if(THUMB_RE.test(text) && /\b(compar\w*|match\w*|verif\w*|check|same|identical|similar\w*)\b/i.test(text)) startThumb(c.id, text, files);
-  else if(!files.length && (AUTH_RE.test(text) || AUTH_RE.test(expandAbbr(text))) && !/\b(what does|meaning|define|definition)\b/i.test(text) && !/^\s*(show|list|display|quote|provide)\b/i.test(text)) startAuthority(c.id, text);
+  else if(!files.length && (AUTH_RE.test(text) || AUTH_RE.test(expandAbbr(text))) && !/\b(what does|meaning|define|definition)\b/i.test(text) && !/^\s*(show|list|display|quote|provide|what|which)\b/i.test(text)) startAuthority(c.id, text);
   else if(isRatioQuestion(text, files.length)) startRatio(c.id, text || "Calculate all ratios from the attached files", files);
   else if(detectMode(text, files.length) === "expert") startExpert(c.id, text || ("Review and analyze the attached file" + (files.length>1?"s":"") + ": check calculations and flag errors or signs of fraud."), files);
   else startAnswer(c.id, q, {});
@@ -2626,12 +2674,11 @@ function startAnswer(cid, q, opts){
     // "explain / what does this mean / help me understand" and other questions -> natural explanation
     // POLICY MODE: exact source wording. CONVERSATION MODE: explained in plain language, same rules.
     const explainAsk = /\b(explain\w*|help me understand|what does .* mean|what do .* mean|in simple (terms|words)|simply|meaning of|clarify|elaborate|walk me through|summari[sz]e)\b/i.test(q);
-    const policyAsk = /\b(show|list|display|quote|provide|give me|exact|word for word|verbatim|original wording|as written)\b/i.test(q) && /\b(polic\w*|guidelines?|procedures?|requirements?|criteria|conditions?|approval authority|authority|committee|decisions?|resolutions?|minutes?|rules?|limits?|wording|text|clause|section)\b/i.test(q)
-      || /\bwhat (is|are) the (\w+ ){0,3}(policy|policies|guideline|guidelines|requirements?|criteria|conditions|rules|committee decision|resolution)\b/i.test(q)
-      || /\b(exact wording|word for word|verbatim|as written|original wording)\b/i.test(q);
+    const policyAsk = /\b(exact wording|word for word|verbatim|as written|original wording|quote)\b/i.test(q)
+      || (/^\s*(show|display|quote|give me)\b/i.test(q) && /\b(polic\w*|guidelines?|clause|section|wording|text|committee decision|resolution|minutes?)\b/i.test(q));
     const policyMode = policyAsk && !explainAsk;
     if(result.refs.length && sampleFn && !policyMode){ naturalAnswer(cid, q, result); return; }
-    if(result.refs.length){ result.text += conflictBlock(result.conflicts); }
+    if(result.refs.length){ result.text = completeText(result.text, result) + conflictBlock(result.conflicts); }
     busy = false; busyChat = null;
     const cc = data && chatById(cid);
     if(cc){
@@ -2647,18 +2694,29 @@ function startAnswer(cid, q, opts){
 
 
 /* ---------- Conversational answers from the knowledge base ---------- */
-const STYLE_RULES = `You are the PPCBank AI Agent answering a bank staff member's question, like a knowledgeable colleague would. Use ONLY the policy text provided below.
+const STYLE_RULES = `You are the credit policy assistant of the bank. Staff ask about loan policies, approval authority and credit procedures. Answer using ONLY the knowledge base excerpts below.
 
-How to answer:
-- Answer naturally and conversationally, in your own words. Do not copy sentences word for word; rephrase, summarize and restructure while keeping the exact meaning, intent, conditions and conclusions.
-- Combine related points into a coherent explanation instead of listing extracted text. Vary sentence structure. Prefer short paragraphs; use a short bullet list only when there are several separate conditions or items that are clearer as a list, and phrase each item in your own words.
-- Keep every number, percentage, amount, currency, date, limit, name, role and document reference EXACTLY as written in the policy text. Do not introduce any other number: write counts in words (for example "five cases") and never round or convert figures.
-- Keep every percentage and figure attached to exactly what it measures in the policy text (for example an interest rate per annum, a processing fee as a % of the approval limit, a down payment %, an LTV or LVR %). Never merge, compare or swap two different percentages, and keep the policy's own term (LTV vs LVR, approval limit vs loan amount).
-- Never add assumptions, opinions, advice or details that are not in the policy text. Keep conditions like "only", "at least", "less than", "or more" exactly as strict as the source.
-- Include only what directly answers the question. If part of the policy text is not relevant to the question, leave it out.
-- If the text says a promotion or document is expired, make that clear.
-- If the policy text does not actually answer the question, reply only: "The requested information could not be identified from the available knowledge sources."
-- No headings, no preamble such as "Based on the policy", no closing offers. Start with the answer itself.
+HOW TO ANSWER
+- First identify the main point of the question. "Who can approve X?" needs a person, role or department, so state that first; "What is the limit?" needs the figure first.
+- Start with the direct answer in the first sentence. Then add only the conditions or details that matter for the question.
+- Answer in your own words, like an experienced credit officer explaining policy to a colleague. Do NOT copy sentences word for word. Use complete, natural sentences and fix any spelling or grammar errors in the source (for example "deligate" means "delegate").
+- Use a short list only when there are 3 or more conditions; otherwise use plain sentences.
+- Stop when the question is answered. Do not add unrelated policy details, repeat the question, add headings, a preamble such as "Based on the policy", or closings like "I hope this helps".
+
+ACCURACY
+- Keep every number, percentage, amount, currency, date, limit, role and document reference EXACTLY as written. Do not introduce any other number (write counts in words) and never round or convert figures.
+- Keep each figure attached to what it measures, and keep the policy's own term (LTV vs LVR, approval limit vs loan amount).
+- Keep conditions like "only", "at least", "less than", "or more", "must" exactly as strict as the source. Never guess or invent approval limits, ratios or authorities.
+- If a promotion or document is expired, say so.
+
+COMPLETENESS
+- Never end with an unfinished sentence, a colon, or phrases like "with below condition:" without listing the conditions.
+- If the excerpt mentions conditions but does not include them, write: "This approval is subject to conditions, but the full conditions are not in the sections I found. Please check [document name and section]."
+
+WHEN INFORMATION IS MISSING
+- If the excerpts do not answer the question, say so in one natural sentence and, if possible, name the related topic you did find, for example: "I couldn't find an approval rule for DSCR below 1.50x. I did find the general approval authority rules. Would you like those?"
+
+TERMS (same meaning): DSCR = Debt Service Coverage Ratio = coverage ratio; drawdown = disbursement = loan release; transfer ownership = title transfer = ownership transfer of collateral; hypothec = mortgage registration = collateral registration; approve = authorize = sign off = approval authority.
 ` + DICTIONARY_RULES;
 // CONVERSATION MODE guard: the explanation must keep every rule qualifier in the policy (limits, obligations, exclusions).
 // If the source says "less than", "at least", "must", "only", "not"..., the explanation has to carry the same idea.
@@ -2677,6 +2735,25 @@ function numbersFaithful(answer, source){
   const nums = t => ((t||"").match(/\d[\d,]*(?:\.\d+)?/g)||[]).map(x=>parseFloat(x.replace(/,/g,""))).filter(n=>!isNaN(n));
   const src = new Set(nums(source));
   return nums(answer).every(n=>src.has(n));
+}
+// never leave a dangling lead-in ("...with below condition:") without its items
+function completeText(text, result){
+  const lines = String(text || "").split("\n");
+  const docName = result && result.refs && result.refs[0] ? docTitle({name: result.refs[0].docName}) : "the source document";
+  const out = [];
+  for(let i = 0; i < lines.length; i++){
+    const l = lines[i]; out.push(l);
+    const lead = /:\s*$/.test(l.trim()) && !/^#+\s/.test(l.trim()) && !/^[A-Z][A-Z &]+:$/.test(l.trim().replace(/^[-•]\s*/, ""));
+    if(!lead) continue;
+    // items follow if the next non-empty line is a list item that is not itself another lead-in
+    let k = i + 1; while(k < lines.length && !lines[k].trim()) k++;
+    const next = lines[k] || "";
+    const hasItems = /^\s*([-•]|\d+[.)])\s+/.test(next) && !/:\s*$/.test(next.trim()) && !(/^[-•]/.test(l.trim()) && /^[-•]\s+[A-Z]\d/.test(next.trim()));
+    if(!hasItems){ const sec = (lines.slice(0, i).reverse().find(x => /^#+\s/.test(x)) || "").replace(/^#+\s*/, "").replace(/\s*\[(High|Medium|Low)\]$/, "");
+      out[out.length - 1] = l.replace(/:\s*$/, ".");
+      out.push(`This is subject to conditions, but the full conditions are not in the sections I found. Please check ${docName}${sec ? ", " + sec : ""}.`); }
+  }
+  return out.join("\n");
 }
 function naturalAnswer(cid, q, result){
   liveExpert = {text:"", status:"Writing the answer", label:"Knowledge search"};
@@ -2702,12 +2779,11 @@ function naturalAnswer(cid, q, result){
     else { const l = $("#live"); if(l && view==="chat" && currentChat===cid) l.innerHTML = liveHtml(); }
   }}).then(res => {
     const t = (res.text||"").trim();
-    if(/(couldn.t find that information|could not be identified)/i.test(t) && t.length < 140) done("The requested information could not be identified from the available knowledge sources.", true);
-    else if(t && numbersFaithful(t, result.text + " " + src) && rulesFaithful(t, result.text)) done(t, true);
-    else done(result.text, false, "Shown in the policy's own wording so every figure and rule stays exact.");
+    if(/(couldn.t find|could not find|could not be identified|not in the (sections|excerpts))/i.test(t) && t.length < 400 && numbersFaithful(t, result.text + " " + q)) done(completeText(t, result), true);
+    else if(t && numbersFaithful(t, result.text + " " + src) && rulesFaithful(t, result.text)) done(completeText(t, result), true);
+    else done(completeText(result.text, result), false, "Shown in the policy's own wording so every figure and rule stays exact.");
   }).catch(e => {
-    if(e && e.code === "cancelled") done(result.text, false, "");
-    else done(result.text, false, "");
+    done(completeText(result.text, result), false, "");
   });
 }
 
@@ -2716,21 +2792,37 @@ function naturalAnswer(cid, q, result){
 const DETAIL_RE = /\b(detail\w*|full report|full analysis|explain\w*|methodolog\w*|show (the |your )?(calculation|calculations|working|workings|steps|reasoning)|step[- ]by[- ]step|why|breakdown|in depth|elaborate|long version)\b/i;
 const FRAUD_CONCISE = `
 
-OUTPUT FORMAT (this overrides every other response format above; the staff member did not ask for detail):
-- Concise and professional. Never accuse fraud directly. Each bullet one sentence. Maximum 180 words.
-- RISK RATING must be exactly one of: No Significant Concern, Low Risk, Medium Risk, High Risk, Critical Review Required.
-- Use exactly these labels:
-EXECUTIVE SUMMARY:
-One or two sentences.
-RISK RATING: [classification] (confidence XX%)
-KEY FINDINGS:
-• up to three, citing Tranx Code, date, page or figure where available
-RED FLAGS:
-• up to three, or exactly "No significant fraud indicators identified."
-VERIFIED FINDINGS:
-• up to three items checked and confirmed consistent
-RECOMMENDATION:
-One or two sentences with the manual review steps needed.`;
+OUTPUT RULES (these override every other response format above; the staff member did not ask for detail):
+- Act as a Bank Statement Fraud Detection Analyst. Findings in SHORT, CLEAR, AUDIT-STYLE bullet points, in plain business language. Readability over technical detail.
+- Never show opening balances, closing balances, calculation formulas, money in / money out arithmetic, technical reconciliation details or OCR extraction calculations, and no long explanations. Never write "open xx.xx, out xx.xx, shown xx.xx, calc xx.xx, diff xx.xx". Instead say, for example, "Balance after the 3 Aug ATM withdrawal is overstated by USD 100."
+- One issue = one finding. Never combine findings in one paragraph. Exactly 3 bullets per finding, each at most 15 words.
+- Confirmed discrepancies are High Risk; possible indicators requiring verification are Medium Risk. Do not report low-priority or procedural observations as findings.
+- Use exactly this layout for each finding, highest risk first, with a blank line between findings:
+🔴 High Risk
+• Issue: what is wrong
+• Evidence: where it appears (date, Tranx Code or page) and why it is a concern
+• Action Required: what the officer must do
+🟠 Medium Risk
+• Issue: what looks unusual
+• Evidence: where it appears
+• Verification Required: what to verify
+- If there are no High or Medium findings, write only: 🟢 No Issue
+- No headings, tables, summaries or conclusions beyond this layout.
+- STATEMENT ANALYSIS RULES (bank statements):
+- Analyze only evidence visible or technically extractable from the uploaded statement. Do not assume fraud, financial weakness, repayment capacity or account behavior without sufficient evidence.
+- Period and balances: identify the statement start and end dates and the first and last transaction dates. Compare balances only when they refer to the same date or period. Never compare a last running balance with a statement ending balance of a later date unless the statement confirms there were no transactions in between. If transaction pages or dates are missing, write exactly: "Unable to reconcile the ending balance because the available transaction records do not cover the complete statement period." Never call balances inconsistent merely because they relate to different dates.
+- Row by row: expected closing balance = previous row's displayed balance + money in − money out ± other adjustments (fees, interest, reversals). Use the recalculation to find rows with a discrepancy, but describe each one in plain business language (see OUTPUT RULES). Do not treat a missing value as zero unless the statement clearly shows zero. Use the system's row-by-row recalculation; for scanned statements read the rows from the page images and apply the same method.
+- Classify every finding as: Confirmed discrepancy, Suspicious indicator requiring verification, or Unable to verify from the available file. Do not claim a PDF was edited from visual appearance alone. PDF metadata may show creation/modification software and dates but not a complete save or overwrite history; never claim a complete editing history.
+- When the question is about fraud, discuss only: font, alignment, spacing and formatting inconsistencies; row-by-row calculation errors; opening, closing and running-balance inconsistencies; edited, inserted, deleted, duplicated or manipulated entries; inconsistent date, amount, currency, decimal or reference formats; missing pages, dates or transaction sequences; duplicate transactions; artificial fund inflows shortly before a loan application (only when the staff member asks about it); PDF metadata or structural editing indicators. Do not discuss repayment capacity, low balances, business performance, account usage quality or general credit risk unless specifically requested.
+- NORMAL BANKING OPERATIONS (apply before assessing fraud):
+- Treat each statement independently. Compare two or more statements only when the staff member explicitly asks (compare these statements, find differences, check consistency between statements, analyze transfers between accounts).
+- Different ending balances on different dates or periods are normal and are never a fraud indicator. A balance discrepancy exists only when the same account, the same date and the same statement period show conflicting balances.
+- A customer may have several accounts; multiple accounts and transfers between the customer's own accounts are normal. List a customer's accounts only when asked (list all accounts, list all loan accounts, show all relationships, show connected accounts).
+- Rapid, large, frequent or same-day cash deposits, high transaction volume and large transfers are normal banking activity on their own. Flag deposits only with additional evidence (verified manipulation, false records, calculation inconsistencies, duplicates), or unexplained deposits right before a loan approval when the staff member specifically asks about that.
+- Missing pages alone, recommendations to verify with the bank, verification-code availability, and notes that visual tampering cannot be checked from text are low-priority procedural observations, not fraud findings, and must not raise the risk level.
+- Base the overall risk on: (1) verified calculation errors, (2) document manipulation evidence, (3) duplicate or altered transactions, (4) contradicting balances within the same statement period. Fraud focus areas: mathematical verification (opening, running, closing balances, row-by-row), transaction integrity (duplicates, edited amounts, missing rows, broken sequence, contradicting values), document integrity (visible formatting inconsistencies, overwritten or manipulated fields, extractable PDF metadata indicating modification); cross-statement analysis only on request.
+- Never write "Fraud detected", "This statement is fraudulent" or any conclusion of fraud. An indicator is not proof; suspicious is not fraudulent. Classify each finding as CONFIRMED DISCREPANCY (mathematical or factual inconsistency directly proven) or POSSIBLE INDICATOR (unusual item requiring verification); use "Unable to verify from available evidence" where it applies.
+`;
 const CONCISE_RULES = `
 
 OUTPUT FORMAT (this overrides every other response format above; the staff member did not ask for detail):
@@ -2780,9 +2872,20 @@ Comparing documents or versions:
 Validating financial statements:
 - Recalculate totals, subtotals, balances, ratios and formulas. For each discrepancy show stated value, recalculated value, variance amount and variance % (variance / recalculated x 100). Give an overall calculation accuracy % (correct checks / total checks).
 
-Bank statements:
-- Use the "System recalculation of the bank statement" when provided (it recomputes every running balance: previous balance + credit - debit). Confirm or correct it, and also check opening/closing reconciliation, totals of credits and debits, interest and fee lines, dates in sequence, duplicated entries and round-figure or unusual deposits. For scanned statements, read the figures from the page images and recalculate them yourself.
-- Report each wrong calculation with stated value, recalculated value, variance amount and variance %, and an overall calculation accuracy %.
+STATEMENT ANALYSIS RULES (bank statements):
+- Analyze only evidence visible or technically extractable from the uploaded statement. Do not assume fraud, financial weakness, repayment capacity or account behavior without sufficient evidence.
+- Period and balances: identify the statement start and end dates and the first and last transaction dates. Compare balances only when they refer to the same date or period. Never compare a last running balance with a statement ending balance of a later date unless the statement confirms there were no transactions in between. If transaction pages or dates are missing, write exactly: "Unable to reconcile the ending balance because the available transaction records do not cover the complete statement period." Never call balances inconsistent merely because they relate to different dates.
+- Row by row: expected closing balance = previous row's displayed balance + money in − money out ± other adjustments (fees, interest, reversals). Report only rows with a discrepancy, giving date, description, opening balance, money in, money out, displayed balance, calculated balance and difference. Do not treat a missing value as zero unless the statement clearly shows zero. Use the system's row-by-row recalculation; for scanned statements read the rows from the page images and apply the same method.
+- Classify every finding as: Confirmed discrepancy, Suspicious indicator requiring verification, or Unable to verify from the available file. Do not claim a PDF was edited from visual appearance alone. PDF metadata may show creation/modification software and dates but not a complete save or overwrite history; never claim a complete editing history.
+- When the question is about fraud, discuss only: font, alignment, spacing and formatting inconsistencies; row-by-row calculation errors; opening, closing and running-balance inconsistencies; edited, inserted, deleted, duplicated or manipulated entries; inconsistent date, amount, currency, decimal or reference formats; missing pages, dates or transaction sequences; duplicate transactions; artificial fund inflows shortly before a loan application (only when the staff member asks about it); PDF metadata or structural editing indicators. Do not discuss repayment capacity, low balances, business performance, account usage quality or general credit risk unless specifically requested.
+- NORMAL BANKING OPERATIONS (apply before assessing fraud):
+- Treat each statement independently. Compare two or more statements only when the staff member explicitly asks (compare these statements, find differences, check consistency between statements, analyze transfers between accounts).
+- Different ending balances on different dates or periods are normal and are never a fraud indicator. A balance discrepancy exists only when the same account, the same date and the same statement period show conflicting balances.
+- A customer may have several accounts; multiple accounts and transfers between the customer's own accounts are normal. List a customer's accounts only when asked (list all accounts, list all loan accounts, show all relationships, show connected accounts).
+- Rapid, large, frequent or same-day cash deposits, high transaction volume and large transfers are normal banking activity on their own. Flag deposits only with additional evidence (verified manipulation, false records, calculation inconsistencies, duplicates), or unexplained deposits right before a loan approval when the staff member specifically asks about that.
+- Missing pages alone, recommendations to verify with the bank, verification-code availability, and notes that visual tampering cannot be checked from text are low-priority procedural observations, not fraud findings, and must not raise the risk level.
+- Base the overall risk on: (1) verified calculation errors, (2) document manipulation evidence, (3) duplicate or altered transactions, (4) contradicting balances within the same statement period. Fraud focus areas: mathematical verification (opening, running, closing balances, row-by-row), transaction integrity (duplicates, edited amounts, missing rows, broken sequence, contradicting values), document integrity (visible formatting inconsistencies, overwritten or manipulated fields, extractable PDF metadata indicating modification); cross-statement analysis only on request.
+- Never write "Fraud detected", "This statement is fraudulent" or any conclusion of fraud. An indicator is not proof; suspicious is not fraudulent. Classify each finding as CONFIRMED DISCREPANCY (mathematical or factual inconsistency directly proven) or POSSIBLE INDICATOR (unusual item requiring verification); use "Unable to verify from available evidence" where it applies.
 
 Formatting consistency (font format, text size, margins):
 - Use the "Formatting analysis" in the PDF forensic data: font share per font, rare fonts and rare text sizes with samples, mixed fonts or sizes on the same line (especially on figures, dates or names), and page margins with pages that deviate. For scanned documents, inspect the page images for the same signs: characters or numbers in a different typeface, weight or size, misaligned columns, uneven line spacing, shifted margins, blurred or boxed areas around figures.
@@ -2842,10 +2945,11 @@ async function pdfForensics(file){
     const lib = window.pdfjsLib; lib.GlobalWorkerOptions.workerSrc = LIBS.pdfWorker;
     const pdf = await lib.getDocument({data: buf}).promise;
     const meta = await pdf.getMetadata().catch(()=>null), info = (meta && meta.info) || {};
-    const fonts = new Map(), sizes = new Map(), margins = [], mixed = []; let total = 0;
-    for(let p=1; p<=Math.min(pdf.numPages, 20); p++){
+    const fonts = new Map(), sizes = new Map(), margins = [], mixed = [], pageNums = []; let total = 0;
+    for(let p=1; p<=Math.min(pdf.numPages, MAX_PDF_PAGES); p++){
       const page = await pdf.getPage(p), vp = page.getViewport({scale:1});
       const tc = await page.getTextContent();
+      const pm = tc.items.map(i=>i.str).join(" ").match(/\bpage\s*(\d{1,3})\s*(?:of|\/)\s*(\d{1,3})\b/i); if(pm) pageNums.push([+pm[1], +pm[2]]);
       const items = [];
       tc.items.forEach(it=>{
         const s = (it.str||"").trim(); if(!s) return;
@@ -2886,8 +2990,13 @@ async function pdfForensics(file){
       const share = total ? (f.chars/total*100).toFixed(1) : "0";
       return `- ${k}: ${share}% of text, sizes ${[...f.sizes].slice(0,6).join("/")}${parseFloat(share) < 3 ? " [RARE FONT] samples: " + f.samples.join("; ") : ""}`;
     });
+    // printed page numbers ("Page 2 of 5") against the pages actually present
+    const declared = pageNums.length ? Math.max(...pageNums.map(p=>p[1])) : 0, seenP = new Set(pageNums.map(p=>p[0]));
+    const missingP = declared ? Array.from({length: declared}, (_, i) => i + 1).filter(n => !seenP.has(n)) : [];
+    const pageNote = !pageNums.length ? "no printed page numbers found" : `printed "of ${declared}"; ${pdf.numPages} page(s) in file${missingP.length ? `; MISSING printed page number(s): ${missingP.join(", ")}` : "; all numbered pages present"}`;
     return [
       `PDF forensic data for ${file.name}:`,
+      `- Page numbering: ${pageNote}`,
       `- Pages: ${pdf.numPages}; PDF version: ${info.PDFFormatVersion || "?"}; file size: ${file.size} bytes; file last modified on device: ${file.lastModified ? new Date(file.lastModified).toISOString() : "?"}`,
       `- Creator: ${info.Creator || "?"}; Producer: ${info.Producer || "?"}; Author: ${info.Author || "?"}; Title: ${info.Title || "?"}`,
       `- CreationDate: ${info.CreationDate || "?"}; ModDate: ${info.ModDate || "?"}`,
@@ -2914,53 +3023,134 @@ function parseCSV(text){
   if(cell || row.length){ row.push(cell); rows.push(row); }
   return rows;
 }
-function statementCheck(rec){
-  const rows = parseCSV(rec.text || "").map(r=>r.map(c=>c.trim()));
-  const hi = rows.slice(0,40).findIndex(r=>r.some(c=>/balance/i.test(c)) && r.some(c=>/debit|withdraw|credit|deposit|amount|\bdr\b|\bcr\b/i.test(c)));
-  if(hi < 0) return "";
-  const h = rows[hi].map(c=>c.toLowerCase());
-  const col = re => h.findIndex(c=>re.test(c));
-  const cB = col(/balance/), cD = col(/debit|withdraw|\bdr\b|money out|paid out/), cC = col(/credit|deposit|\bcr\b|money in|paid in/), cA = col(/^amount|amount$/), cDate = col(/date/);
-  const cCode = col(/tranx|txn|trx|trans(action)? ?(code|type)|tran ?code|^code$|^type$/), cDesc = h.findIndex((c,i)=>i!==cCode && /desc|narrat|particular|detail|remark|transaction/.test(c));
-  const tag = r => [cCode>=0 && r[cCode] ? "Tranx Code " + r[cCode] : "", cDate>=0 && r[cDate] ? r[cDate] : ""].filter(Boolean).join(", ");
-  const tx = [];   // for pattern checks
-  const num = v => { if(v == null) return null; let t = String(v).replace(/[^\d.,()\-]/g,""); if(!t || !/\d/.test(t)) return null; const neg = /^\(.*\)$/.test(t) || /^-/.test(t); t = t.replace(/[(),\-]/g,""); const n = parseFloat(t); return isNaN(n) ? null : (neg ? -n : n); };
-  // two views: (a) the true balance carried from the opening balance, (b) each row's own arithmetic against the row above
-  let prev = null, chain = null, checked = 0, ok = 0, breaks = 0, sumC = 0, sumD = 0, opening = null, lastStated = null;
-  const errs = [];
-  rows.slice(hi+1).forEach((r, k)=>{
-    const bal = num(r[cB]); if(bal === null) return;
-    let cr = cC >= 0 ? (num(r[cC]) || 0) : 0, dr = cD >= 0 ? Math.abs(num(r[cD]) || 0) : 0;
-    if(cC < 0 && cD < 0 && cA >= 0){ const a = num(r[cA]) || 0; if(a >= 0) cr = a; else dr = -a; }
-    tx.push({row: hi+k+2, cr, dr, code: cCode>=0 ? r[cCode] : "", date: cDate>=0 ? r[cDate] : "", desc: cDesc>=0 ? String(r[cDesc]||"").slice(0,40) : "", tag: tag(r)});
-    if(prev === null){ opening = bal - cr + dr; prev = bal; chain = bal; lastStated = bal; sumC += cr; sumD += dr; return; }
-    chain = Math.round((chain + cr - dr) * 100) / 100;
-    const rowExp = Math.round((prev + cr - dr) * 100) / 100;
-    checked++; sumC += cr; sumD += dr;
-    if(Math.abs(rowExp - bal) >= 0.005) breaks++;
-    if(Math.abs(chain - bal) < 0.005) ok++;
-    else if(errs.length < 40) errs.push(`- Row ${hi+k+2}${tag(r) ? " (" + tag(r) + ")" : ""}${cDesc>=0 ? " " + String(r[cDesc]).slice(0,40) : ""}: stated balance ${bal.toFixed(2)}, correct balance ${chain.toFixed(2)}, variance ${(bal-chain).toFixed(2)} (${chain ? ((bal-chain)/Math.abs(chain)*100).toFixed(2) : "n/a"}%)`);
-    prev = bal; lastStated = bal;
-  });
-  if(!checked) return "";
-  const expClose = Math.round((opening + sumC - sumD) * 100) / 100;
-  return [`System recalculation of the bank statement "${rec.name}" (columns found: balance${cD>=0?", debit":""}${cC>=0?", credit":""}${cA>=0&&cD<0&&cC<0?", amount":""}):`,
-    `- Rows checked: ${checked}; balances matching the correct running balance (carried from the opening balance): ${ok}; wrong: ${checked-ok}; calculation accuracy ${(ok/checked*100).toFixed(2)}%`,
-    `- Rows whose own arithmetic (balance above + credit - debit) does not add up: ${breaks}`,
-    `- Opening balance (derived): ${opening.toFixed(2)}; total credits ${sumC.toFixed(2)}; total debits ${sumD.toFixed(2)}; closing balance stated ${lastStated.toFixed(2)}; correct closing balance ${expClose.toFixed(2)}; closing variance ${(lastStated-expClose).toFixed(2)}`,
-    ...(errs.length ? errs : ["- No running-balance errors found."]),
-    ...transactionPatterns(tx, cCode >= 0)].join("\n");
+// ----- statement period, balances and row-by-row recalculation (tables and text statements) -----
+const ST_MON = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,sept:8,oct:9,nov:10,dec:11};
+const ST_DATE = String.raw`(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{1,2}[\s\-]+[A-Za-z]{3,9}[\s\-,]+\d{2,4}|[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})`;
+function stParseDate(t){
+  if(!t) return null; const s = String(t).trim(); let m;
+  if((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return new Date(+m[1], +m[2]-1, +m[3]);
+  if((m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/))){ const y = +m[3] < 100 ? 2000 + +m[3] : +m[3]; return +m[2] > 12 ? new Date(y, +m[1]-1, +m[2]) : new Date(y, +m[2]-1, +m[1]); }
+  if((m = s.match(/^(\d{1,2})[\s\-]+([A-Za-z]{3,9})[\s\-,]+(\d{2,4})/)) && ST_MON[m[2].slice(0,3).toLowerCase()] != null){ const y = +m[3] < 100 ? 2000 + +m[3] : +m[3]; return new Date(y, ST_MON[m[2].slice(0,3).toLowerCase()], +m[1]); }
+  if((m = s.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/)) && ST_MON[m[1].slice(0,3).toLowerCase()] != null) return new Date(+m[3], ST_MON[m[1].slice(0,3).toLowerCase()], +m[2]);
+  return null;
 }
-function transactionPatterns(tx, hasCode){
+const stFmt = d => d ? `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}` : "not stated";
+const stNum = v => { if(v == null) return null; let t = String(v).trim(); if(!t || !/\d/.test(t)) return null; const neg = /^\(.*\)$/.test(t) || /^-/.test(t) || /\bdr\b/i.test(t); t = t.replace(/[^\d.,]/g,"").replace(/,/g,""); const n = parseFloat(t); return isNaN(n) ? null : (neg ? -n : n); };
+function stMeta(text){
+  const T = String(text || ""), D = ST_DATE, meta = {};
+  let m = T.match(new RegExp(String.raw`(?:statement\s+period|period|from)\s*[:\-]?\s*(${D})\s*(?:to|-|–|until|through)\s*(${D})`, "i"));
+  if(m){ meta.start = stParseDate(m[1]); meta.end = stParseDate(m[2]); }
+  if(!meta.end){ m = T.match(new RegExp(String.raw`(?:statement\s+date|as\s+(?:of|at)|closing\s+date|end\s+date|period\s+end(?:ing)?)\s*[:\-]?\s*(${D})`, "i")); if(m) meta.end = stParseDate(m[1]); }
+  m = T.match(/(?:closing|ending|end\s+of\s+period|final)\s+balance[^\d\-(\n]{0,40}([\-(]?\$?\s?[\d,]+(?:\.\d+)?\)?(?:\s?(?:cr|dr))?)/i); if(m) meta.statedClosing = stNum(m[1]);
+  m = T.match(/(?:opening|beginning|starting)\s+balance[^\d\-(\n]{0,40}([\-(]?\$?\s?[\d,]+(?:\.\d+)?\)?(?:\s?(?:cr|dr))?)|balance\s+(?:b\/?f|brought\s+forward)[^\d\-(\n]{0,20}([\-(]?[\d,]+(?:\.\d+)?\)?)/i); if(m) meta.statedOpening = stNum(m[1] || m[2]);
+  return meta;
+}
+const ST_IN = /\b(cr|credit|deposit|salary|payroll|received|receipt|transfer\s+in|incoming|refund|interest\s+(?:credit|paid\s+to)|reversal\s+credit|cash\s+in)\b/i;
+const ST_OUT = /\b(dr|debit|withdraw\w*|atm|fee|charge|commission|tax|payment|purchase|pos|transfer\s+out|outgoing|bill|cash\s+out|loan\s+repay\w*)\b/i;
+// rows from a text statement (PDF / Word / text): a line that starts with a date and ends with the running balance
+function stTextRows(text){
+  const lines = String(text || "").split(/\r?\n/), rows = [];
+  const hdr = lines.find(l => /(debit|withdraw|money out|paid out)/i.test(l) && /(credit|deposit|money in|paid in)/i.test(l) && /balance/i.test(l));
+  const outFirst = hdr ? hdr.search(/debit|withdraw|money out|paid out/i) < hdr.search(/credit|deposit|money in|paid in/i) : true;
+  lines.forEach((l, i) => {
+    const m = l.match(new RegExp(String.raw`^\s*(${ST_DATE})\s+(.*)$`)); if(!m) return;
+    const rest = m[2], nums = [...rest.matchAll(/\(?-?\$?\d[\d,]*\.\d{2}\)?(?:\s?(?:cr|dr)\b)?/gi)].map(x => ({raw: x[0], idx: x.index}));
+    if(!nums.length) return;
+    const balTok = nums[nums.length - 1], amts = nums.slice(0, -1), desc = rest.slice(0, nums[0].idx).trim().slice(0, 50);
+    const r = {line: i + 1, date: m[1], desc, bal: stNum(balTok.raw), inAmt: null, outAmt: null, adj: 0, dirUnknown: null};
+    if(amts.length >= 2){ const a = stNum(amts[0].raw), b = stNum(amts[1].raw); if(outFirst){ r.outAmt = Math.abs(a); r.inAmt = Math.abs(b); } else { r.inAmt = Math.abs(a); r.outAmt = Math.abs(b); } }
+    else if(amts.length === 1){ const a = stNum(amts[0].raw);
+      if(/\bdr\b/i.test(amts[0].raw) || a < 0) r.outAmt = Math.abs(a); else if(/\bcr\b/i.test(amts[0].raw)) r.inAmt = Math.abs(a);
+      else if(ST_IN.test(desc) && !ST_OUT.test(desc)) r.inAmt = a; else if(ST_OUT.test(desc) && !ST_IN.test(desc)) r.outAmt = a; else r.dirUnknown = a; }
+    rows.push(r);
+  });
+  return rows;
+}
+// rows from a table statement (CSV / Excel)
+function stTableRows(text){
+  const grid = parseCSV(text || "").map(r => r.map(c => c.trim()));
+  const hi = grid.slice(0, 40).findIndex(r => r.some(c => /balance/i.test(c)) && r.some(c => /debit|withdraw|credit|deposit|amount|money in|money out|\bdr\b|\bcr\b/i.test(c)));
+  if(hi < 0) return null;
+  const h = grid[hi].map(c => c.toLowerCase()), col = re => h.findIndex(c => re.test(c));
+  const cB = col(/balance/), cD = col(/debit|withdraw|\bdr\b|money out|paid out/), cC = col(/credit|deposit|\bcr\b|money in|paid in/), cA = col(/^amount|amount$/), cDate = col(/date/);
+  const cFee = col(/fee|charge|commission|\btax\b|vat/), cInt = col(/interest/), cAdj = col(/adjust/), cRef = col(/\bref|reference|serial|txn ?no|transaction ?no|cheque/);
+  const cCode = col(/tranx|txn|trx|trans(action)? ?(code|type)|tran ?code|^code$|^type$/), cDesc = h.findIndex((c, i) => i !== cCode && /desc|narrat|particular|detail|remark|transaction/.test(c));
+  const rows = [];
+  grid.slice(hi + 1).forEach((r, k) => {
+    const bal = stNum(r[cB]);
+    if(bal === null && !(cDate >= 0 && stParseDate(r[cDate]))) return;   // footer lines such as "Closing balance: ..." are not transactions
+    const cr = cC >= 0 ? stNum(r[cC]) : null, dr = cD >= 0 ? stNum(r[cD]) : null, amt = cA >= 0 ? stNum(r[cA]) : null;
+    const row = {line: hi + k + 2, date: cDate >= 0 ? r[cDate] : "", desc: cDesc >= 0 ? String(r[cDesc] || "").slice(0, 50) : "", code: cCode >= 0 ? r[cCode] : "", ref: cRef >= 0 ? r[cRef] : "", bal, inAmt: null, outAmt: null, adj: 0, dirUnknown: null};
+    if(cC >= 0 || cD >= 0){ if(cr != null || dr != null){ row.inAmt = cr != null ? Math.abs(cr) : 0; row.outAmt = dr != null ? Math.abs(dr) : 0; } }   // one filled column = the other is clearly zero
+    else if(amt != null){ if(amt < 0) row.outAmt = -amt; else row.inAmt = amt; }
+    const fee = cFee >= 0 ? stNum(r[cFee]) : null, it = cInt >= 0 ? stNum(r[cInt]) : null, ad = cAdj >= 0 ? stNum(r[cAdj]) : null;
+    row.adj = (it || 0) - Math.abs(fee || 0) + (ad || 0); row.hasAdj = fee != null || it != null || ad != null;
+    rows.push(row);
+  });
+  return {rows, hasCode: cCode >= 0, hasRef: cRef >= 0};
+}
+function statementCheck(rec, opts = {}){
+  const table = /\.(csv|tsv|xlsx|xls|xlsm)$/i.test(rec.name) || /^Sheet: /m.test(rec.text || "") ? stTableRows(rec.text) : null;
+  const rows = table ? table.rows : stTextRows(rec.text);
+  if(!rows || rows.length < 2) return "";
+  const meta = stMeta(rec.text), money = n => n == null ? "–" : Number(n).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const dates = rows.map(r => stParseDate(r.date)).filter(Boolean), first = dates.length ? new Date(Math.min(...dates)) : null, last = dates.length ? new Date(Math.max(...dates)) : null;
+  const out = [`System recalculation of the bank statement "${rec.name}" (${table ? "table" : "text"} statement, ${rows.length} transaction rows):`,
+    `- Statement period: ${stFmt(meta.start)} to ${stFmt(meta.end)}; first transaction ${stFmt(first)}; last transaction ${stFmt(last)}.`];
+  // row by row: the previous row's displayed balance is this row's opening balance
+  let prev = meta.statedOpening != null ? meta.statedOpening : null, startIdx = prev != null ? 0 : 1, verified = 0;
+  if(prev == null && rows[0].bal != null) prev = rows[0].bal;
+  const disc = [], unver = [];
+  for(let i = startIdx; i < rows.length; i++){
+    const r = rows[i], label = `${r.date || "line " + r.line}${r.code ? " " + r.code : ""}${r.desc ? " " + r.desc : ""}`.trim();
+    if(r.bal == null){ unver.push(`${label}: running balance not shown`); prev = null; continue; }
+    if(prev == null){ prev = r.bal; continue; }
+    if(r.dirUnknown != null){
+      const asIn = +(prev + r.dirUnknown).toFixed(2), asOut = +(prev - r.dirUnknown).toFixed(2);
+      if(Math.abs(asIn - r.bal) < 0.005 || Math.abs(asOut - r.bal) < 0.005) verified++;
+      else unver.push(`${label}: direction of ${money(r.dirUnknown)} not identifiable; displayed ${money(r.bal)} matches neither ${money(asIn)} (in) nor ${money(asOut)} (out)`);
+      prev = r.bal; continue;
+    }
+    if(r.inAmt == null && r.outAmt == null && !r.hasAdj){
+      if(Math.abs(r.bal - prev) >= 0.005) unver.push(`${label}: amount missing but balance changed by ${money(r.bal - prev)}`); else verified++;
+      prev = r.bal; continue;
+    }
+    const calc = +(prev + (r.inAmt || 0) - (r.outAmt || 0) + (r.adj || 0)).toFixed(2), diff = +(r.bal - calc).toFixed(2);
+    if(Math.abs(diff) >= 0.005) disc.push(`${label}: opening ${money(prev)}, in ${money(r.inAmt)}, out ${money(r.outAmt)}${r.adj ? `, adjustments ${money(r.adj)}` : ""}, displayed ${money(r.bal)}, calculated ${money(calc)}, difference ${money(diff)}`);
+    else verified++;
+    prev = r.bal;
+  }
+  const checked = verified + disc.length;
+  out.push(`- Row-by-row check (previous displayed balance + money in − money out ± adjustments${meta.statedOpening != null ? "; first row checked against the stated opening balance " + money(meta.statedOpening) : ""}): ${checked} row(s) checked, ${disc.length} CONFIRMED discrepancy row(s), ${unver.length} row(s) unable to verify. Calculation accuracy ${checked ? (verified / checked * 100).toFixed(2) : "n/a"}%.`);
+  disc.slice(0, 25).forEach(d => out.push("  - Confirmed discrepancy: " + d));
+  unver.slice(0, 15).forEach(d => out.push("  - Unable to verify: " + d));
+  // ending balance: compared only when it refers to the same date as the last running balance
+  const lastBal = [...rows].reverse().find(r => r.bal != null);
+  if(meta.statedClosing != null){
+    if(meta.end && last && last < meta.end) out.push(`- Ending balance: stated ${money(meta.statedClosing)} as at ${stFmt(meta.end)}; last running balance ${money(lastBal && lastBal.bal)} is dated ${stFmt(last)}. NOT compared: Unable to reconcile the ending balance because the available transaction records do not cover the complete statement period (no records after ${stFmt(last)}).`);
+    else if(meta.end || last){ const d = +((lastBal ? lastBal.bal : 0) - meta.statedClosing).toFixed(2); out.push(`- Ending balance: stated ${money(meta.statedClosing)}; last running balance ${money(lastBal && lastBal.bal)} (same date${meta.end ? " " + stFmt(meta.end) : ""}): ${Math.abs(d) < 0.005 ? "consistent" : "CONFIRMED discrepancy of " + money(d)}.`); }
+    else out.push(`- Ending balance: stated ${money(meta.statedClosing)}, but the statement end date was not identified; not compared with the last running balance.`);
+  } else out.push("- Ending balance: no stated closing/ending balance found in the extracted text.");
+  // format consistency of dates and amounts
+  const dfmt = new Set(rows.filter(r => stParseDate(r.date)).map(r => String(r.date).trim().replace(/\d/g, "9").replace(/[A-Za-z]+/g, "A")));
+  out.push(`- Date formats used: ${dfmt.size <= 1 ? "consistent" : "MIXED (" + [...dfmt].slice(0, 4).join(", ") + ")"}.`);
+  // reference-number sequence (missing entries)
+  if(table && table.hasRef){ const refs = rows.map(r => parseInt(String(r.ref).replace(/\D/g, ""), 10)).filter(n => !isNaN(n)); const gaps = [];
+    for(let i = 1; i < refs.length; i++) if(refs[i] - refs[i-1] > 1 && refs[i] - refs[i-1] < 1000) gaps.push(`${refs[i-1]}→${refs[i]}`);
+    out.push(`- Reference-number sequence: ${gaps.length ? "GAPS " + gaps.slice(0, 8).join(", ") : "no gaps"}.`); }
+  const tx = rows.map(r => ({row: r.line, cr: r.inAmt || 0, dr: r.outAmt || 0, code: r.code || "", date: r.date || "", desc: r.desc || "", tag: [r.code ? "Tranx Code " + r.code : "", r.date].filter(Boolean).join(", ")}));
+  return out.concat(transactionPatterns(tx, !!(table && table.hasCode), opts)).join("\n");
+}
+function transactionPatterns(tx, hasCode, opts = {}){
   const out = ["Transaction pattern review:"], money = n => n.toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2});
   const seen = new Map(), dups = [];
   tx.forEach(t=>{ const amt = t.cr || -t.dr; if(!amt) return; const k = t.date + "|" + amt + "|" + t.code; if(seen.has(k)) dups.push(`row ${seen.get(k)} and row ${t.row} (${t.tag || "no code/date"}, ${money(Math.abs(amt))})`); else seen.set(k, t.row); });
   out.push(`- Possible duplicate entries (same date, amount${hasCode ? " and Tranx Code" : ""}): ${dups.length ? dups.slice(0,10).join("; ") : "none"}`);
   const round = tx.filter(t=>t.cr >= 1000 && t.cr % 1000 === 0);
-  out.push(`- Round-figure credits of 1,000 or more: ${round.length ? round.slice(0,10).map(t=>`${money(t.cr)} (${t.tag || "row " + t.row})`).join("; ") : "none"}`);
+  out.push(`- [Context only, normal activity on its own] Round-figure credits of 1,000 or more: ${round.length ? round.slice(0,10).map(t=>`${money(t.cr)} (${t.tag || "row " + t.row})`).join("; ") : "none"}`);
   const io = [];
   for(let i=0;i<tx.length-1;i++){ const a = tx[i]; if(!a.cr) continue; for(let j=i+1;j<=Math.min(i+2, tx.length-1);j++){ const b = tx[j]; if(b.dr && b.dr >= a.cr*0.9 && b.dr <= a.cr*1.1){ io.push(`${money(a.cr)} in (${a.tag || "row " + a.row}) then ${money(b.dr)} out (${b.tag || "row " + b.row})`); break; } } }
-  out.push(`- Rapid in-and-out movements (credit followed within two entries by a debit of 90-110% of it): ${io.length ? io.slice(0,10).join("; ") : "none"}`);
+  out.push(`- [Context only, normal activity on its own] Rapid in-and-out movements (credit followed within two entries by a debit of 90-110% of it): ${io.length ? io.slice(0,10).join("; ") : "none"}`);
   if(hasCode){
     const counts = {}; tx.forEach(t=>{ if(t.code) counts[t.code] = (counts[t.code]||0) + 1; });
     const keys = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
@@ -2968,9 +3158,23 @@ function transactionPatterns(tx, hasCode){
     const rare = keys.filter(k=>counts[k] === 1 && tx.length >= 10);
     if(rare.length) out.push(`- Tranx Codes appearing only once: ${rare.slice(0,10).map(k=>{ const t = tx.find(x=>x.code===k); return `${k} (${t.date || "row " + t.row}${t.cr ? ", credit " + money(t.cr) : t.dr ? ", debit " + money(t.dr) : ""})`; }).join("; ")}`);
   }
+  // sudden balance spikes and inflows bunched at the end of the statement (possible window-dressing before a loan application)
+  const credits = tx.filter(t=>t.cr > 0).map(t=>t.cr).sort((a,b)=>a-b), med = credits.length ? credits[Math.floor(credits.length/2)] : 0;
+  const spikes = tx.filter(t=>t.cr > 0 && med && t.cr >= med * 5 && t.cr >= 1000);
+  out.push(`- [Context only, normal activity on its own] Unusually large credits (5x the median credit of ${money(med)} or more): ${spikes.length ? spikes.slice(0,8).map(t=>`${money(t.cr)} (${t.tag || "row " + t.row})`).join("; ") : "none"}`);
+  const totC = tx.reduce((s,t)=>s+(t.cr||0),0), tail = tx.slice(Math.floor(tx.length * 0.8)), tailC = tail.reduce((s,t)=>s+(t.cr||0),0);
+  if(opts.inflow && tx.length >= 10 && totC) out.push(`- Credits in the last 20% of entries: ${money(tailC)} = ${(tailC/totC*100).toFixed(1)}% of all credits${tailC/totC >= 0.4 ? " [CONCENTRATED INFLOW NEAR STATEMENT END]" : ""}`);
+  // date order and gaps
+  const ds = tx.map(t=>{ const m = String(t.date).match(/(\d{1,4})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/); if(!m) return null; const [a,b,c] = [+m[1], +m[2], +m[3]]; const d = a > 31 ? new Date(a, b-1, c) : new Date(c < 100 ? 2000 + c : c, b-1, a); return isNaN(d) ? null : d; });
+  const back = []; for(let i=1;i<ds.length;i++) if(ds[i] && ds[i-1] && ds[i] < ds[i-1]) back.push(tx[i].tag || "row " + tx[i].row);
+  out.push(`- Entries out of date order: ${back.length ? back.slice(0,8).join("; ") : "none"}`);
+  const gaps = []; for(let i=1;i<ds.length;i++) if(ds[i] && ds[i-1] && (ds[i]-ds[i-1]) / 864e5 > 20) gaps.push(`${tx[i-1].date} to ${tx[i].date}`);
+  out.push(`- Gaps over 20 days with no entries (possible missing transactions): ${gaps.length ? gaps.slice(0,6).join("; ") : "none"}`);
   return out;
 }
-async function verificationEvidence(recs){
+async function verificationEvidence(recs, q = ""){
+  const compareAsked = /\b(compar\w*|find (the )?differences?|differences? between|consisten\w* between|check consistency|transfers? between (the )?accounts?|reconcile (the|these|both) statements)\b/i.test(q);
+  const inflow = /\b(before (the )?loan|loan (application|approval)|window[- ]?dressing|inflows?|unexplained deposits?)\b/i.test(q);
   const parts = [];
   for(const r of recs){
     const f = fileBlobs.get(r.id);
@@ -2978,9 +3182,10 @@ async function verificationEvidence(recs){
     else if(f) parts.push(`File facts for ${f.name}: type ${f.type || extOf(f.name)}, ${f.size} bytes, last modified on device ${f.lastModified ? new Date(f.lastModified).toISOString() : "?"}.`);
     else parts.push(`File facts for ${r.name}: uploaded in an earlier session, so only its text is available (no images, metadata or fonts). Re-attach the file for a full check.`);
   }
-  recs.forEach(r=>{ if(r.text && /^(csv|tsv|xlsx|xls|xlsm|txt)$/.test(extOf(r.name))){ const chk = statementCheck(r); if(chk) parts.push(chk); } });
+  recs.forEach(r=>{ if(r.text){ const full = fullTexts.get(r.id) || r.text; const pg = pageInfo.get(r.id) || r.pages;
+    const chk = statementCheck({...r, text: full}, {inflow}); if(chk) parts.push(chk + (pg ? `\n- Pages read for the recalculation: ${pg.read} of ${pg.total}${pg.read < pg.total ? " (file longer than the reading limit)" : " (all pages)"}.` : "")); } });   // tables and text statements (PDF, Word, TXT)
   const texts = recs.filter(r=>r.text);
-  if(texts.length >= 2){
+  if(texts.length >= 2 && compareAsked){   // cross-document comparison only on request
     const d = diffLines(maskSensitive(texts[0].text).text, maskSensitive(texts[1].text).text);
     const sim = Math.round(d.same / Math.max(1, Math.max(d.totalA, d.totalB)) * 1000) / 10;
     parts.push(`Version differences between "${texts[0].name}" (previous, "-") and "${texts[1].name}" (current, "+"): ${d.changes.length} changed line(s); ${sim}% of lines identical.\n` + (d.changes.slice(0,200).join("\n") || "(no text differences)"));
@@ -3074,6 +3279,8 @@ const fileBlobs = new Map();   // file id -> File, kept for this session so imag
 
 function detectMode(q, hasFiles){
   const s = expandKhmer(q||"").toLowerCase();
+  // policy questions about a ratio or limit ("What is the minimum coverage ratio?") are knowledge questions, not calculations
+  if(!hasFiles && /\b(minimum|maximum|min|max|policy|required|requirement|guideline|limit|allowed|threshold|who can|approv\w*)\b/.test(s) && (s.match(/\d[\d,.]*/g) || []).length < 2 && !/\b(calculat\w*|compute|analy[sz]e|assess)\b/.test(s)) return "knowledge";
   if(!hasFiles && /\b(compar\w*|combine|merge|conflict\w*|differen\w*)\b/.test(s) && /\b(across|all documents|both documents|documents|polic\w*|promotions?|guidelines?|minutes?)\b/.test(s)) return "knowledge";
   if(!hasFiles && /\b(what does|what do|meaning|what is meant|define|definition|difference between)\b/.test(s)) return "knowledge";   // "what does X mean" is a terminology lookup
   const expertWords = /\b(calculat\w*|comput\w*|ratios?|analy[sz]\w*|assess\w*|apprais\w*|financial statements?|balance sheet|income statement|profit and loss|p&l|cash ?flows?|bank statements?|par ?(1|7|30|60|90)?|portfolio at risk|npl|non[- ]?performing|executive summary|summari[sz]e|recommend\w*|should (we|i) (approve|lend|reject)|fraud\w*|tamper\w*|fake|forg\w*|verify|check (the |this |my )?(calculation|figures|numbers|totals|math)|errors?|accuracy|correct percentage|repayment capacity|projection|forecast|stress test|credit memo|underwrit\w*)\b/;
@@ -3106,10 +3313,15 @@ Domain terminology (apply each term by its business definition; never assume two
 function expertDocs(q, attached){
   // documents in context: files attached to this message; otherwise the latest files if the question refers to a file
   let recs = attached.map(a=>data.files.find(f=>f.id===a.id)).filter(Boolean);
-  if(!recs.length && /\b(file|statement|attached|document|upload|report|list|spreadsheet|excel|pdf)\b/i.test(q)) recs = data.files.slice(0,2);
+  if(!recs.length && /\b(file|statement|attached|document|upload|report|list|spreadsheet|excel|pdf)\b/i.test(q)) recs = data.files.slice(0, /\b(compar\w*|differences?|consisten\w*|between)\b/i.test(q) ? 2 : 1);
   let budget = 150000;
   const parts = recs.map(f=>{
-    const body = f.text ? maskSensitive(f.text).text.slice(0, Math.max(0, budget)) : "[No readable text. If it is a scanned document or photo, its page images are attached when available.]";
+    const full = f.text ? maskSensitive(fullTexts.get(f.id) || f.text).text : "";
+    let body = f.text ? full.slice(0, Math.max(0, budget)) : "[No readable text. If it is a scanned document or photo, its page images are attached when available.]";
+    if(f.text && body.length < full.length){
+      const marks = [...body.matchAll(/--- Page (\d+) of (\d+) ---/g)], lastP = marks.length ? marks[marks.length-1][1] : "?", tot = marks.length ? marks[0][2] : "?";
+      body += `\n[Text shortened here for length: pages ${lastP}-${tot} are not shown above. The system recalculation and forensic checks cover every page of the file, so rely on them for pages after ${lastP}.]`;
+    }
     budget -= body.length;
     return `=== FILE: ${f.name} ===\n${body}`;
   });
@@ -3157,7 +3369,10 @@ function startExpert(cid, q, attached){
     busy = false; busyChat = null; liveExpert = null; expertCtl = null;
     const cc = data && chatById(cid);
     if(cc){
-      const f = maskSensitive(text || "");
+      const f = maskSensitive(String(text || "")
+        .replace(/\bfraud (has been |was )?detected\b/gi, "potential indicator requiring verification")
+        .replace(/\b(this|the) (bank )?statement is fraudulent\b/gi, "$1 $2statement shows inconsistencies requiring further review")
+        .replace(/\bis fraudulent\b/gi, "requires further review"));
       cc.messages.push({role:"ai", mode:"expert", text: f.text, notice: extra.notice || "", refs: extra.refs || [], query: q, ts: Date.now()});
       cc.updated = Date.now(); saveData();
       audit("expert_query", `“${q.slice(0,70)}”${extra.audit ? ": " + extra.audit : ""}`);
@@ -3174,7 +3389,7 @@ function startExpert(cid, q, attached){
     const docs = expertDocs(q, attached);
     const verify = VERIFY_RE.test(expandKhmer(q));
     if(verify){ liveExpert.status = "Examining documents, metadata and fonts"; const lv0 = $("#live"); if(lv0 && view==="chat" && currentChat===cid) lv0.innerHTML = liveHtml(); }
-    const evidence = verify && docs.recs.length ? await verificationEvidence(docs.recs) : "";
+    const evidence = verify && docs.recs.length ? await verificationEvidence(docs.recs, q) : "";
     const images = await expertImages(docs.recs, verify);
     const titles = kb().filter(d=>canAccess(me(), d)).map(d=>"- " + docTitle(d)).join("\n");
     const history = (c ? c.messages.slice(-7, -1) : []).map(m=>`${m.role === "user" ? "Staff" : "AI Agent"}: ${m.text.slice(0, 1500)}`).join("\n");
@@ -3346,7 +3561,7 @@ function caFromText(q){
 function caPolicyDscr(){
   try{
     const r = runAgent("minimum DSCR SME term loans");
-    const m = r.refs.length && r.text.match(/(\d+(?:\.\d+)?)\s?x/i);
+    const m = r.refs.length && (r.text.match(/(?:DSCR\s*(?:≥|>=)|over and equal|at least)\s*(\d+(?:\.\d+)?)/i) || r.text.match(/(\d+(?:\.\d+)?)\s?(?:x|times)\b/i));
     if(m) return {min: parseFloat(m[1]), source: docTitle({name: r.refs[0].docName})};
   }catch(e){}
   return {min: 1.25, source: ""};
@@ -3715,12 +3930,16 @@ async function startAuthority(cid, q){
     const ov = l => docTokens(l).filter(w=>qt.has(w)).length;
     const cands = primary.filter(l=>/approv|authorit|delegat/i.test(l)), bestOv = Math.max(0, ...cands.map(ov));
     const closest = cands.filter(l=>ov(l) >= bestOv && bestOv > 0);
-    const auth = limitNote ? [limitNote, ...closest.slice(0,2)] : tier ? [`${tier.who} (${tier.line})`] : closest.slice(0,4);
+    let auth = limitNote ? [limitNote, ...closest.slice(0,2)] : tier ? [`${tier.who} (${tier.line})`] : closest.slice(0,4);
+    // a rule that ends with a colon carries its conditions on the following lines: keep them together
+    auth = auth.flatMap(l => { if(!/:\s*$/.test(l)) return [l]; const k = primary.indexOf(l); const items = [];
+      for(let n = k + 1; k >= 0 && n < primary.length && items.length < 6; n++){ if(/:\s*$/.test(primary[n]) || /approv|authorit|delegat/i.test(primary[n]) && items.length) break; items.push("  - " + primary[n]); }
+      return [l, ...items]; }).map(l => l.replace(/\bdeligate\b/gi, "delegate"));
     const conds = primary.filter(l=>isCond(l) && !auth.includes(l)).slice(0,5);
     const esc = lines.filter(l=>/one level above|exception/i.test(l)).concat(tier && amount ? [] : lines.filter(l=>/^credit committee:/i.test(l))).slice(0,3);
     const special = primary.filter(l=>!auth.includes(l) && !conds.includes(l) && !esc.includes(l)).slice(0,3);
     const none = "• None stated in the sources found.";
-    return ["APPROVAL AUTHORITY:", ...(auth.length ? auth.map(x=>"• " + x) : ["• The requested information could not be identified from the available knowledge sources."])].join("\n");
+    return completeText(["APPROVAL AUTHORITY:", ...(auth.length ? auth.map(x=>/^\s+-/.test(x) ? x : "• " + x) : ["• The requested information could not be identified from the available knowledge sources."])].join("\n"), {refs: refList});
   };
   if(!sampleFn){ finish(det(), amount ? "" : "Add the facility amount to the question for an exact authority level."); return; }
   // 3. Claude reasons over the retrieved rules only, like a credit committee member
@@ -4496,6 +4715,7 @@ $("#adminForm").onsubmit = async e => {
   const fail = t => { msg.textContent = t; msg.className = "msg err"; $("#apw").value = ""; };
   if(!idValid(id)) return fail("Admin ID must be a 6-digit number.");
   const mins = lockedFor("admin:" + id); if(mins) return fail(`Too many incorrect attempts. Try again in ${mins} minute(s), or use Forgot password.`);
+  msg.textContent = "Signing in…"; msg.className = "msg";
   const all = admins(), a = all[id];
   if(!a || !await verifyPassword(a, pw)){
     const left = noteFailure("admin:" + id);
@@ -4683,7 +4903,7 @@ function resetUserPassword(id){
     if(!pwValid(pw)) return fail(PW_HELP);
     if(pw !== m.q("#rpPw2").value) return fail("Passwords don't match.");
     if(!await dialog({title:`Reset the password for ${u.name}?`, text:`User ID ${id}: the current password stops working immediately.`, okText:"Reset password"})) return;
-    const a = users(), x = a[id]; await setPassword(x, pw); store.set(K.users, a); clearFailures("staff:" + id);
+    const a = users(), x = a[id]; await setPassword(x, pw); if(!store.set(K.users, a)){ toast("The new password could not be saved because browser storage is full."); return; } clearFailures("staff:" + id);
     audit("password_reset", `New password set for ${id}`);
     m.close(); renderAdmin(); showCredentials("Password updated", id, pw);
   };
@@ -4918,13 +5138,21 @@ $("#adminForgot").onclick = () => {
 
 /* ================= Boot ================= */
 (async () => {
+  // sign-in needs the browser's Web Crypto, which browsers only allow on HTTPS (or localhost / a local file)
+  if(!window.crypto || !window.crypto.subtle){
+    showScreen("auth");
+    const why = "Sign-in is unavailable because this page isn't opened over a secure (HTTPS) address. Open the AI Agent from its https:// link (for example your Vercel address) and try again.";
+    ["#authMsg", "#adminMsg"].forEach(s => { const el = $(s); if(el){ el.textContent = why; el.className = "msg err"; } });
+    return;
+  }
   try{ await cloudLoad(); }
   catch(e){
     console.error(e);
     document.body.innerHTML = `<div style="max-width:560px;margin:12vh auto;padding:24px;font-family:sans-serif;line-height:1.5"><h2>Can't connect to the database</h2><p>${esc(e && e.message || e)}</p><p>Check that SUPABASE_URL and SUPABASE_ANON_KEY are set in Vercel (then redeploy), and that you ran supabase-setup.sql in Supabase.</p></div>`;
     return;
   }
-  await seed();
+  try{ await seed(); }
+  catch(e){ console.error(e); showScreen("auth"); $("#authMsg").textContent = "The AI Agent couldn't prepare its sign-in data in this browser (storage may be blocked or full). Allow site data for this page, or try another browser."; $("#authMsg").className = "msg err"; return; }
   showScreen(location.hash === "#admin" ? "adminAuth" : "auth");
 })();
 
