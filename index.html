@@ -1911,14 +1911,9 @@ function showView(v){
 }
 function refresh(){ if(view==="chat") renderThread(); renderSidebar(); }
 
-const PROMPTS = [
-  "What is the minimum DSCR for SME loans?",
-  "What is the interest rate for SME 1000?",
-  "What is the current ratio if current assets are 500,000 and current liabilities 320,000?",
-  "Assess a USD 250,000 SME loan: revenue 900,000, EBITDA 160,000, existing debt payments 40,000 a year"
-];
+const PROMPTS = [];   // no suggested questions on the home page
 function renderPrompts(){
-  const p = $("#prompts"); p.innerHTML = "";
+  const p = $("#prompts"); p.innerHTML = ""; p.style.display = PROMPTS.length ? "" : "none";
   PROMPTS.forEach(x=>{
     const b = document.createElement("button"); b.className="prompt";
     b.innerHTML = `<span class="pi">${I.bank}</span><span>${esc(x)}</span>`;
