@@ -3817,6 +3817,8 @@ MATCHING FEATURES:
 • Ridge Ending Match: XX%
 • Bifurcation Match: XX%
 RISK ASSESSMENT: Low / Medium / High
+RISK EXPLANATION:
+(leave this line empty; the system fills it in)
 OBSERVATIONS:
 • Observation 1
 • Observation 2
@@ -3839,7 +3841,24 @@ function normalizeThumb(text, poor){
   let t = text
     .replace(/SIMILARITY SCORE:.*$/im, `SIMILARITY SCORE: ${score.toFixed(2)}%`)
     .replace(/MATCH RESULT:.*$/im, `MATCH RESULT: ${result}`)
-    .replace(/RISK ASSESSMENT:.*$/im, `RISK ASSESSMENT: ${risk}`);
+    .replace(/RISK ASSESSMENT:.*$/im, `RISK ASSESSMENT: ${({Low:"🟢", Medium:"🟡", High:"🔴"})[risk]} ${risk} risk`)
+    .replace(/MATCH RESULT:.*$/im, `MATCH RESULT: ${result} (${score.toFixed(2)}% similarity)`);
+  // risk explanation: at least two sentences, written from the final score so it always agrees with the result
+  const names = {ridge:"ridge pattern", core:"core point", delta:"delta point", ending:"ridge ending", bif:"bifurcation"};
+  const known = Object.entries(f).filter(([,v]) => v != null).sort((a,b) => a[1] - b[1]);
+  const weak = known.filter(([,v]) => v < 60).map(([k,v]) => `${names[k]} (${v}%)`), lowest = known[0] ? `${names[known[0][0]]} (${known[0][1]}%)` : "";
+  const confM = t.match(/CONFIDENCE LEVEL:\s*(\w+)/i), lowConf = poor || (confM && /low/i.test(confM[1]));
+  const pct = score.toFixed(2) + "%";
+  let why = risk === "Low"
+    ? `The similarity score of ${pct} is at or above the 90% match threshold, so the two prints are very likely from the same finger and identity risk is low. The key features are consistent${lowest ? `, with the weakest being ${lowest}` : ""}, so staff can continue with the standard verification steps.`
+    : risk === "Medium"
+    ? `The similarity score of ${pct} falls in the partial match range (60% to 89.99%), so the prints share some features but are not consistent enough to confirm the same person, and identity risk is medium. ${weak.length ? `The main differences are in ${weak.join(", ")}. ` : lowest ? `The weakest feature is ${lowest}. ` : ""}Ask the customer for a fresh, clear thumbprint and check another form of identification before proceeding.`
+    : `The similarity score of ${pct} is below the 60% threshold, so the prints show significant differences and may not belong to the same person, and identity risk is high. ${weak.length ? `Clear differences were found in ${weak.join(", ")}. ` : ""}Do not proceed with the transaction; verify the customer's identity in person and escalate according to the bank's identity verification procedure.`;
+  if(lowConf) why += " Image quality also reduces confidence in this result, so take new, clear images before making a final decision.";
+  // the conclusion always states the final result, so it can never contradict the score
+  t = t.replace(/(CONCLUSION:\s*\n?)[\s\S]*$/i, (m, h) => h + `The prints are a ${result} with ${pct} similarity, which indicates ${risk.toLowerCase()} identity risk. Confirm on the bank's biometric system before relying on this result.`);
+  if(/RISK EXPLANATION:/i.test(t)) t = t.replace(/RISK EXPLANATION:[^\n]*\n?(?:\s*\(leave[^\n]*\n?|[^\n]*\n?)?(?=OBSERVATIONS:)/i, `RISK EXPLANATION:\n${why}\n`);
+  else t = t.replace(/(RISK ASSESSMENT:.*$)/im, `$1\nRISK EXPLANATION:\n${why}`);
   const QUAL = "Result confidence reduced due to image quality limitations.";
   if(poor){
     t = t.replace(/CONFIDENCE LEVEL:.*$/im, "CONFIDENCE LEVEL: Low");
